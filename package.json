@@ -6,7 +6,7 @@
     "test": "mkdir -p reports && newman run collections/jsonplaceholder.postman_collection.json -e postman_environment.json -r cli,html --reporter-html-export reports/html-report.html"
   },
    "devDependencies": {
-    "newman": "^6.3.0",
+       "newman": "^6.0.0",,
     "newman-reporter-html": "^1.0.7",
     "ajv": "^8.12.0"
   }
