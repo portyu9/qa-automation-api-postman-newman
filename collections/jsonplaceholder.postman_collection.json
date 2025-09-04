@@ -1,0 +1,55 @@
+{
+  "info": {
+    "name": "JSONPlaceholder API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Get all posts",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/posts"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"Response is array of objects\", function () {",
+              "    pm.expect(Array.isArray(pm.response.json())).to.be.true;",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get single post",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/posts/1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"Response has correct id\", function () {",
+              "    var body = pm.response.json();",
+              "    pm.expect(body.id).to.equal(1);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
