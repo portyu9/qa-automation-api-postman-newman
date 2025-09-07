@@ -1,6 +1,6 @@
 # API Automation with Postman and Newman
 
-I built this repository to demonstrate how I structure and execute API test suites using **Postman** collections and **Newman**.  Many teams rely on Postman for exploratory API testing but struggle to keep those tests version controlled or to run them consistently in CI/CD pipelines.  By committing my collections, test scripts, environment files and CI configuration to Git, I can treat my API tests like any other code asset.
+I built this repository to demonstrate how I structure and execute API test suites using **Postman** collections and **Newman**.  Many teams rely on Postman for exploratory API testing but struggle to keep those tests version controlled or to run them consistently in CI/CD pipelines.  By committing my collections, test scripts, environment files and CI configuration to Git, I can treat my API tests like any other code asset with GitHub Actions CI.
 
 ## Key Features
 
