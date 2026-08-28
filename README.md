@@ -22,7 +22,7 @@ A Postman collection and Newman execution framework for API behavior, JSON Schem
 
 ## Installation
 
-Node.js 20+ is required.
+Node.js 22+ is required.
 
 ```bash
 npm install
