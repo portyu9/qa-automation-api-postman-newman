@@ -3,7 +3,12 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const newman = require('newman');
-const { compactFailure, positiveInteger, projectFile } = require('./runtime');
+const {
+  compactFailure,
+  positiveInteger,
+  projectFile,
+  redactText,
+} = require('./runtime');
 
 const root = path.resolve(__dirname, '..');
 const collectionPath = projectFile(
@@ -46,15 +51,17 @@ newman.run(
     iterationData,
     folder: process.env.NEWMAN_FOLDER || undefined,
     timeoutRequest,
-    reporters: ['cli', 'junit', 'json'],
+    // The raw JSON reporter can serialize far more execution context than the
+    // compact manifest, including values that callers may inject at runtime.
+    // Keep JUnit + the sanitized manifest as the CI-safe machine-readable outputs.
+    reporters: ['cli', 'junit'],
     reporter: {
       junit: { export: path.join(reportsDir, 'newman-junit.xml') },
-      json: { export: path.join(reportsDir, 'newman.json') },
     },
   },
   (error, summary) => {
     if (error) {
-      console.error(error);
+      console.error(redactText(error?.message || error));
       process.exitCode = 1;
       return;
     }
