@@ -4,7 +4,7 @@
   "private": true,
   "description": "Postman collection and Newman execution framework with schema, data-driven, and CI reporting support.",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "test": "node scripts/run-newman.js",
