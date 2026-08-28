@@ -4,6 +4,17 @@
 [![Extended](https://github.com/portyu9/qa-automation-api-postman-newman/actions/workflows/extended.yml/badge.svg)](https://github.com/portyu9/qa-automation-api-postman-newman/actions/workflows/extended.yml)
 [![Security](https://github.com/portyu9/qa-automation-api-postman-newman/actions/workflows/security.yml/badge.svg)](https://github.com/portyu9/qa-automation-api-postman-newman/actions/workflows/security.yml)
 
+[![Node.js](https://img.shields.io/badge/Node.js-22%2B-339933)](https://nodejs.org/)
+[![JavaScript](https://img.shields.io/badge/JavaScript-ES2022-F7DF1E)](https://developer.mozilla.org/docs/Web/JavaScript)
+[![Postman](https://img.shields.io/badge/Postman-collections-FF6C37)](https://www.postman.com/)
+[![Newman](https://img.shields.io/badge/Newman-6.2.2-FF6C37)](https://github.com/postmanlabs/newman)
+[![JSON Schema](https://img.shields.io/badge/JSON%20Schema-contracts-5A29E4)](https://json-schema.org/)
+[![JUnit](https://img.shields.io/badge/JUnit-reporting-25A162)](https://junit.org/)
+[![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-CI-2088FF)](https://github.com/features/actions)
+[![Trivy](https://img.shields.io/badge/Trivy-security%20scan-1904DA)](https://trivy.dev/)
+[![License](https://img.shields.io/badge/License-MIT-2EA44F)](LICENSE)
+[![Security Policy](https://img.shields.io/badge/Security-Policy-6E7781)](.github/SECURITY.md)
+
 A version-controlled API quality-engineering framework built around Postman collections and the Newman execution engine. The collection owns request and assertion semantics; the Node runner owns validated input provenance, target policy, timeout policy, schema injection, correlation, reporting, and process-exit integrity. A deterministic loopback API provides a broader data-driven validation path without making extended CI dependent on a public service.
 
 > [!IMPORTANT]
