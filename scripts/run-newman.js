@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const newman = require('newman');
 const {
+  absoluteHttpBaseUrl,
   compactFailure,
   positiveInteger,
   projectFile,
@@ -29,6 +30,21 @@ const iterationData = process.env.NEWMAN_ITERATION_DATA
 
 fs.mkdirSync(reportsDir, { recursive: true });
 const environment = JSON.parse(fs.readFileSync(environmentPath, 'utf8'));
+if (!Array.isArray(environment.values)) {
+  throw new Error('Postman environment must contain a values array');
+}
+
+const baseUrlEntry = environment.values.find(
+  (entry) => entry.key === 'base_url' && entry.enabled !== false
+);
+if (!baseUrlEntry) {
+  throw new Error('Postman environment must define an enabled base_url value');
+}
+baseUrlEntry.value = absoluteHttpBaseUrl(
+  'base_url',
+  process.env.NEWMAN_BASE_URL || baseUrlEntry.value
+);
+
 const runId = process.env.TEST_RUN_ID || `newman-${Date.now()}`;
 const runIdEntry = environment.values.find((entry) => entry.key === 'run_id');
 if (runIdEntry) runIdEntry.value = runId;
@@ -75,6 +91,7 @@ newman.run(
         environment: path.relative(root, environmentPath),
         iterationData: iterationData ? path.relative(root, iterationData) : null,
         folder: process.env.NEWMAN_FOLDER || null,
+        baseUrl: baseUrlEntry.value,
         timeoutRequestMs: timeoutRequest,
       },
       stats: summary.run.stats,
