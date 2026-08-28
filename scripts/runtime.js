@@ -27,6 +27,26 @@ function projectFile(root, value, name) {
   return resolved;
 }
 
+function absoluteHttpBaseUrl(name, value) {
+  const raw = String(value ?? '').trim().replace(/\/$/, '');
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(`${name} must be an absolute URL`);
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error(`${name} must use http or https`);
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error(`${name} must not contain URL credentials`);
+  }
+  if (parsed.search || parsed.hash) {
+    throw new Error(`${name} must not contain a query string or fragment`);
+  }
+  return raw;
+}
+
 function sanitizeUrl(value) {
   const raw = String(value ?? '');
   let parsed;
@@ -69,6 +89,7 @@ function compactFailure(failure) {
 }
 
 module.exports = {
+  absoluteHttpBaseUrl,
   compactFailure,
   positiveInteger,
   projectFile,
