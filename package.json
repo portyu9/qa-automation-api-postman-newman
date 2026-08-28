@@ -2,14 +2,14 @@
   "name": "qa-automation-api-postman-newman",
   "version": "1.0.0",
   "private": true,
-  "description": "Postman collection and Newman execution framework with schema, data-driven, and CI reporting support.",
+  "description": "Postman collection and Newman execution framework with schema, data, and CI reporting controls.",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "test": "node scripts/run-newman.js",
-    "test:smoke": "NEWMAN_FOLDER='Posts - read' node scripts/run-newman.js",
-    "validate": "node scripts/validate-assets.js"
+    "test:smoke": "NEWMAN_FOLDER=Read node scripts/run-newman.js",
+    "validate": "node scripts/validate-assets.js && node scripts/runtime.selftest.js"
   },
   "license": "MIT",
   "devDependencies": {
