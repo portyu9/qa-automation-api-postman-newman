@@ -1,31 +1,40 @@
-name: CI
+name: ci
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: postman-newman-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TEST_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
+  REQUEST_TIMEOUT_MS: "10000"
 
 jobs:
-  newman-tests:
+  newman:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 18
-
-      - name: Install dependencies
-        run: npm  install --legacy-peer-deps
-
-      - name: Run Postman collection via Newman
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm run validate
+      - name: Execute collection
         run: npm test
-
-      - name: Upload Newman HTML report
+      - name: Upload Newman reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: newman-report
-          path: reports/html-report.html
+          name: newman-reports
+          path: reports/
+          if-no-files-found: ignore
+          retention-days: 14

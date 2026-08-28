@@ -1,0 +1,8 @@
+node_modules/
+reports/
+.env
+*.local.postman_environment.json
+*.log
+.DS_Store
+.idea/
+.vscode/
