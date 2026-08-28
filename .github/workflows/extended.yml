@@ -1,0 +1,92 @@
+name: extended
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "collections/**"
+      - "schemas/**"
+      - "data/**"
+      - "scripts/**"
+      - "postman_environment.json"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/extended.yml"
+  schedule:
+    - cron: "11 8 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: newman-extended-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  local-data-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TEST_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}-local
+      REQUEST_TIMEOUT_MS: "3000"
+      LOCAL_API_PORT: "4010"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run validate
+      - name: Execute full data-driven collection against deterministic local API
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          node scripts/local-api.js > reports/local-api.log 2>&1 &
+          api_pid=$!
+          cleanup() {
+            kill "$api_pid" 2>/dev/null || true
+            wait "$api_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          ready=false
+          for attempt in {1..30}; do
+            if curl --fail --silent "http://127.0.0.1:${LOCAL_API_PORT}/health" >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 0.2
+          done
+          if [[ "$ready" != "true" ]]; then
+            echo "local API did not become ready" >&2
+            exit 1
+          fi
+
+          NEWMAN_BASE_URL="http://127.0.0.1:${LOCAL_API_PORT}" \
+          NEWMAN_ITERATION_DATA="data/posts.json" \
+            npm test
+      - name: Publish API observability summary
+        if: always()
+        run: |
+          {
+            echo '### Newman · deterministic data-driven contract'
+            echo
+            echo "- Run ID: \`${TEST_RUN_ID}\`"
+            echo '- Target: `127.0.0.1` local protocol-compatible API'
+            echo '- Dataset: `data/posts.json`'
+            echo "- Job status: \`${{ job.status }}\`"
+            echo '- Evidence: JUnit + sanitized run manifest + local API log'
+          } | tee reports/extended-summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload extended evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: newman-local-data-evidence
+          path: reports/
+          if-no-files-found: ignore
+          retention-days: 14
