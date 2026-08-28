@@ -3,7 +3,13 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const newman = require('newman');
-const { compactFailure, positiveInteger, projectFile } = require('./runtime');
+const {
+  absoluteHttpBaseUrl,
+  compactFailure,
+  positiveInteger,
+  projectFile,
+  redactText,
+} = require('./runtime');
 
 const root = path.resolve(__dirname, '..');
 const collectionPath = projectFile(
@@ -24,6 +30,21 @@ const iterationData = process.env.NEWMAN_ITERATION_DATA
 
 fs.mkdirSync(reportsDir, { recursive: true });
 const environment = JSON.parse(fs.readFileSync(environmentPath, 'utf8'));
+if (!Array.isArray(environment.values)) {
+  throw new Error('Postman environment must contain a values array');
+}
+
+const baseUrlEntry = environment.values.find(
+  (entry) => entry.key === 'base_url' && entry.enabled !== false
+);
+if (!baseUrlEntry) {
+  throw new Error('Postman environment must define an enabled base_url value');
+}
+baseUrlEntry.value = absoluteHttpBaseUrl(
+  'base_url',
+  process.env.NEWMAN_BASE_URL || baseUrlEntry.value
+);
+
 const runId = process.env.TEST_RUN_ID || `newman-${Date.now()}`;
 const runIdEntry = environment.values.find((entry) => entry.key === 'run_id');
 if (runIdEntry) runIdEntry.value = runId;
@@ -46,15 +67,17 @@ newman.run(
     iterationData,
     folder: process.env.NEWMAN_FOLDER || undefined,
     timeoutRequest,
-    reporters: ['cli', 'junit', 'json'],
+    // The raw JSON reporter can serialize far more execution context than the
+    // compact manifest, including values that callers may inject at runtime.
+    // Keep JUnit + the sanitized manifest as the CI-safe machine-readable outputs.
+    reporters: ['cli', 'junit'],
     reporter: {
       junit: { export: path.join(reportsDir, 'newman-junit.xml') },
-      json: { export: path.join(reportsDir, 'newman.json') },
     },
   },
   (error, summary) => {
     if (error) {
-      console.error(error);
+      console.error(redactText(error?.message || error));
       process.exitCode = 1;
       return;
     }
@@ -68,6 +91,7 @@ newman.run(
         environment: path.relative(root, environmentPath),
         iterationData: iterationData ? path.relative(root, iterationData) : null,
         folder: process.env.NEWMAN_FOLDER || null,
+        baseUrl: baseUrlEntry.value,
         timeoutRequestMs: timeoutRequest,
       },
       stats: summary.run.stats,
