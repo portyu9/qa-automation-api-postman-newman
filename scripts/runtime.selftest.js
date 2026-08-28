@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {
+  absoluteHttpBaseUrl,
   compactFailure,
   positiveInteger,
   projectFile,
@@ -30,6 +31,19 @@ assert.throws(
   () => projectFile(root, '../outside.json', 'collection'),
   /inside the repository root/
 );
+
+assert.equal(
+  absoluteHttpBaseUrl('base_url', 'https://example.test/api/'),
+  'https://example.test/api'
+);
+for (const value of [
+  'localhost:3000',
+  'https://user:password@example.test',
+  'https://example.test/api?access_token=secret',
+  'https://example.test/api#fragment',
+]) {
+  assert.throws(() => absoluteHttpBaseUrl('base_url', value), /base_url/);
+}
 
 assert.equal(
   sanitizeUrl(
