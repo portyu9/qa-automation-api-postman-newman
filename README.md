@@ -25,8 +25,10 @@ A Postman collection and Newman execution framework for API behavior, JSON Schem
 Node.js 22+ is required.
 
 ```bash
-npm install
+npm ci
 ```
+
+`package-lock.json` is committed and CI uses `npm ci` so dependency resolution is reproducible. Use `npm install` only when intentionally changing dependencies, review the resulting lockfile diff, and commit the manifest and lockfile together.
 
 ## Execution
 
@@ -100,6 +102,6 @@ Newman provides built-in `cli`, `junit`, and `json` reporters. CI retains machin
 
 ## CI
 
-GitHub Actions validates all JSON assets, checks the committed environment for obvious secret-like values, executes Newman, preserves the real failure exit code, and uploads reports even on failure.
+GitHub Actions installs the committed dependency graph with `npm ci`, validates all JSON assets, checks the committed environment for obvious secret-like values, executes Newman, preserves the real failure exit code, and uploads reports even on failure.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/TEST_STRATEGY.md`](docs/TEST_STRATEGY.md) for variable, schema, data, and release-gate guidance.
