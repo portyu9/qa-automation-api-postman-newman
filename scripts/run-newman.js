@@ -3,14 +3,23 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const newman = require('newman');
+const { compactFailure, positiveInteger, projectFile } = require('./runtime');
 
 const root = path.resolve(__dirname, '..');
-const collectionPath = path.resolve(root, process.env.NEWMAN_COLLECTION || 'collections/jsonplaceholder.postman_collection.json');
-const environmentPath = path.resolve(root, process.env.NEWMAN_ENVIRONMENT || 'postman_environment.json');
-const schemaPath = path.resolve(root, 'schemas/post-schema.json');
+const collectionPath = projectFile(
+  root,
+  process.env.NEWMAN_COLLECTION || 'collections/jsonplaceholder.postman_collection.json',
+  'NEWMAN_COLLECTION'
+);
+const environmentPath = projectFile(
+  root,
+  process.env.NEWMAN_ENVIRONMENT || 'postman_environment.json',
+  'NEWMAN_ENVIRONMENT'
+);
+const schemaPath = projectFile(root, 'schemas/post-schema.json', 'schema');
 const reportsDir = path.resolve(root, 'reports');
 const iterationData = process.env.NEWMAN_ITERATION_DATA
-  ? path.resolve(root, process.env.NEWMAN_ITERATION_DATA)
+  ? projectFile(root, process.env.NEWMAN_ITERATION_DATA, 'NEWMAN_ITERATION_DATA')
   : undefined;
 
 fs.mkdirSync(reportsDir, { recursive: true });
@@ -21,10 +30,11 @@ if (runIdEntry) runIdEntry.value = runId;
 else environment.values.push({ key: 'run_id', value: runId, enabled: true });
 
 const postSchema = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
-const timeoutRequest = Number(process.env.REQUEST_TIMEOUT_MS || 10_000);
-if (!Number.isInteger(timeoutRequest) || timeoutRequest <= 0) {
-  throw new Error('REQUEST_TIMEOUT_MS must be a positive integer');
-}
+const timeoutRequest = positiveInteger(
+  'REQUEST_TIMEOUT_MS',
+  process.env.REQUEST_TIMEOUT_MS,
+  10_000
+);
 
 newman.run(
   {
@@ -50,14 +60,26 @@ newman.run(
     }
 
     const failures = summary.run.failures || [];
-    const stats = summary.run.stats;
-    fs.writeFileSync(
-      path.join(reportsDir, 'summary.json'),
-      JSON.stringify({ runId, failures: failures.length, stats }, null, 2)
-    );
+    const manifest = {
+      schemaVersion: 1,
+      runId,
+      inputs: {
+        collection: path.relative(root, collectionPath),
+        environment: path.relative(root, environmentPath),
+        iterationData: iterationData ? path.relative(root, iterationData) : null,
+        folder: process.env.NEWMAN_FOLDER || null,
+        timeoutRequestMs: timeoutRequest,
+      },
+      stats: summary.run.stats,
+      timings: summary.run.timings,
+      failures: failures.map(compactFailure),
+    };
 
-    if (failures.length > 0) {
-      process.exitCode = 1;
-    }
+    const output = path.join(reportsDir, 'run-manifest.json');
+    const temporary = `${output}.tmp`;
+    fs.writeFileSync(temporary, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+    fs.renameSync(temporary, output);
+
+    if (failures.length > 0) process.exitCode = 1;
   }
 );
