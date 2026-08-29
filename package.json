@@ -9,7 +9,7 @@
   "scripts": {
     "test": "node scripts/run-newman.js",
     "test:smoke": "NEWMAN_FOLDER=Read node scripts/run-newman.js",
-    "validate": "node scripts/validate-assets.js && node scripts/runtime.selftest.js && node scripts/local-api.selftest.js"
+    "validate": "node scripts/validate-assets.js && node scripts/runtime.selftest.js && node scripts/local-api.selftest.js && node scripts/execution-ledger.selftest.js"
   },
   "license": "MIT",
   "devDependencies": {
