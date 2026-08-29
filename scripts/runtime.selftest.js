@@ -6,6 +6,7 @@ const {
   absoluteHttpBaseUrl,
   compactFailure,
   correlationToken,
+  optionalLabel,
   positiveInteger,
   projectFile,
   redactText,
@@ -24,6 +25,11 @@ assert.equal(correlationToken('TEST_RUN_ID', ' newman:contract-42 ', 'fallback')
 assert.equal(correlationToken('TEST_RUN_ID', '', 'fallback'), 'fallback');
 for (const value of ['unsafe run id', 'line-break\nheader', 'x'.repeat(129)]) {
   assert.throws(() => correlationToken('TEST_RUN_ID', value, 'fallback'), /TEST_RUN_ID/);
+}
+assert.equal(optionalLabel('NEWMAN_FOLDER', ' Posts - read '), 'Posts - read');
+assert.equal(optionalLabel('NEWMAN_FOLDER', '   '), null);
+for (const value of ['line-break\nfolder', 'x'.repeat(201)]) {
+  assert.throws(() => optionalLabel('NEWMAN_FOLDER', value), /NEWMAN_FOLDER/);
 }
 assert.equal(
   projectFile(
