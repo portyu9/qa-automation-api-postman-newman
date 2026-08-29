@@ -5,6 +5,7 @@ const path = require('node:path');
 const MAX_FAILURE_MESSAGE = 2_000;
 const MAX_LABEL = 500;
 const SAFE_CORRELATION_TOKEN = /^[A-Za-z0-9._:-]{1,128}$/;
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
 const URL_PATTERN = /https?:\/\/[^\s"'<>]+/gi;
 const AUTH_PATTERN = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi;
 const SECRET_ASSIGNMENT = /\b(access[_-]?token|token|password|passwd|secret|api[_-]?key|authorization)\b(\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;&}]+)/gi;
@@ -23,6 +24,20 @@ function correlationToken(name, raw, fallback) {
     throw new Error(
       `${name} must be 1-128 ASCII letters, digits, dots, underscores, colons, or hyphens`
     );
+  }
+  return value;
+}
+
+function optionalLabel(name, raw, maxLength = 200) {
+  if (!Number.isInteger(maxLength) || maxLength < 1) {
+    throw new TypeError('maxLength must be a positive integer');
+  }
+  if (raw === undefined || raw === null) return null;
+
+  const value = String(raw).trim();
+  if (!value) return null;
+  if (value.length > maxLength || CONTROL_CHARACTER.test(value)) {
+    throw new Error(`${name} must be at most ${maxLength} characters and contain no control characters`);
   }
   return value;
 }
@@ -103,6 +118,7 @@ module.exports = {
   absoluteHttpBaseUrl,
   compactFailure,
   correlationToken,
+  optionalLabel,
   positiveInteger,
   projectFile,
   redactText,
