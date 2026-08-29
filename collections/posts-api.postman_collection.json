@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Posts API Quality Contract",
-    "description": "Provider-neutral API collection with collection-level response policy, JSON Schema assertions, generated test data, and correlated runs.",
+    "description": "Provider-neutral API collection with collection-level response policy, JSON Schema assertions, generated test data, correlated runs, preflight validation, and chained state contracts.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [
@@ -35,6 +35,40 @@
     }
   ],
   "item": [
+    {
+      "name": "Runtime - preflight",
+      "item": [
+        {
+          "name": "Health preflight",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "X-Test-Run-Id", "value": "{{run_id}}" },
+              { "key": "X-Request-Id", "value": "{{request_id}}" }
+            ],
+            "url": "{{base_url}}/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Health endpoint is ready', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json()).to.deep.equal({ status: 'ok' });",
+                  "});",
+                  "pm.test('Request correlation is echoed by the target', function () {",
+                  "  pm.expect(pm.response.headers.get('x-request-id')).to.equal(pm.variables.get('request_id'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
     {
       "name": "Posts - read",
       "item": [
@@ -132,7 +166,40 @@
                   "  pm.expect(body.title).to.equal(pm.variables.get('generated_title'));",
                   "  pm.expect(body.userId).to.equal(Number(expectedUserId));",
                   "  pm.expect(body.id).to.be.a('number');",
+                  "  pm.collectionVariables.set('created_post_id', String(body.id));",
+                  "  pm.collectionVariables.set('created_post_title', body.title);",
                   "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read created post",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "X-Test-Run-Id", "value": "{{run_id}}" },
+              { "key": "X-Request-Id", "value": "{{request_id}}" }
+            ],
+            "url": "{{base_url}}/posts/{{created_post_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Created state can be consumed by the next request', function () {",
+                  "  const body = pm.response.json();",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.response.to.have.jsonSchema(JSON.parse(pm.globals.get('post_schema')));",
+                  "  pm.expect(body.id).to.equal(Number(pm.collectionVariables.get('created_post_id')));",
+                  "  pm.expect(body.title).to.equal(pm.collectionVariables.get('created_post_title'));",
+                  "});",
+                  "pm.collectionVariables.unset('created_post_id');",
+                  "pm.collectionVariables.unset('created_post_title');"
                 ]
               }
             }
