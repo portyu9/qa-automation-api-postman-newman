@@ -4,6 +4,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const newman = require('newman');
 const {
+  DEFAULT_LOCAL_API_URL,
+  startLocalApi,
+  stopLocalApi,
+} = require('./local-api');
+const {
   absoluteHttpBaseUrl,
   compactFailure,
   positiveInteger,
@@ -57,53 +62,83 @@ const timeoutRequest = positiveInteger(
   10_000
 );
 
-newman.run(
-  {
-    collection: collectionPath,
-    environment,
-    globals: {
-      values: [{ key: 'post_schema', value: JSON.stringify(postSchema), enabled: true }],
+function executeCollection() {
+  return new Promise((resolve, reject) => {
+    newman.run(
+      {
+        collection: collectionPath,
+        environment,
+        globals: {
+          values: [{ key: 'post_schema', value: JSON.stringify(postSchema), enabled: true }],
+        },
+        iterationData,
+        folder: process.env.NEWMAN_FOLDER || undefined,
+        timeoutRequest,
+        // Raw Newman JSON can serialize substantially more runtime context than
+        // the operational evidence contract requires. Retain focused JUnit plus
+        // the allowlisted sanitized run manifest instead.
+        reporters: ['cli', 'junit'],
+        reporter: {
+          junit: { export: path.join(reportsDir, 'newman-junit.xml') },
+        },
+      },
+      (error, summary) => {
+        if (error) reject(error);
+        else resolve(summary);
+      }
+    );
+  });
+}
+
+function writeManifest(summary) {
+  const failures = summary.run.failures || [];
+  const manifest = {
+    schemaVersion: 1,
+    runId,
+    inputs: {
+      collection: path.relative(root, collectionPath),
+      environment: path.relative(root, environmentPath),
+      iterationData: iterationData ? path.relative(root, iterationData) : null,
+      folder: process.env.NEWMAN_FOLDER || null,
+      baseUrl: baseUrlEntry.value,
+      targetClass: baseUrlEntry.value === DEFAULT_LOCAL_API_URL ? 'local-fixture' : 'explicit-external',
+      timeoutRequestMs: timeoutRequest,
     },
-    iterationData,
-    folder: process.env.NEWMAN_FOLDER || undefined,
-    timeoutRequest,
-    // The raw JSON reporter can serialize far more execution context than the
-    // compact manifest, including values that callers may inject at runtime.
-    // Keep JUnit + the sanitized manifest as the CI-safe machine-readable outputs.
-    reporters: ['cli', 'junit'],
-    reporter: {
-      junit: { export: path.join(reportsDir, 'newman-junit.xml') },
-    },
-  },
-  (error, summary) => {
-    if (error) {
-      console.error(redactText(error?.message || error));
-      process.exitCode = 1;
-      return;
+    stats: summary.run.stats,
+    timings: summary.run.timings,
+    failures: failures.map(compactFailure),
+  };
+
+  const output = path.join(reportsDir, 'run-manifest.json');
+  const temporary = `${output}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  fs.renameSync(temporary, output);
+  return failures.length;
+}
+
+async function main() {
+  const ownsLocalApi = baseUrlEntry.value === DEFAULT_LOCAL_API_URL;
+  let localApi;
+
+  try {
+    if (ownsLocalApi) {
+      localApi = await startLocalApi();
+      console.log(`Newman runner owns deterministic local API at ${DEFAULT_LOCAL_API_URL}`);
     }
 
-    const failures = summary.run.failures || [];
-    const manifest = {
-      schemaVersion: 1,
-      runId,
-      inputs: {
-        collection: path.relative(root, collectionPath),
-        environment: path.relative(root, environmentPath),
-        iterationData: iterationData ? path.relative(root, iterationData) : null,
-        folder: process.env.NEWMAN_FOLDER || null,
-        baseUrl: baseUrlEntry.value,
-        timeoutRequestMs: timeoutRequest,
-      },
-      stats: summary.run.stats,
-      timings: summary.run.timings,
-      failures: failures.map(compactFailure),
-    };
-
-    const output = path.join(reportsDir, 'run-manifest.json');
-    const temporary = `${output}.tmp`;
-    fs.writeFileSync(temporary, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
-    fs.renameSync(temporary, output);
-
-    if (failures.length > 0) process.exitCode = 1;
+    const summary = await executeCollection();
+    if (writeManifest(summary) > 0) process.exitCode = 1;
+  } catch (error) {
+    console.error(redactText(error?.message || error));
+    process.exitCode = 1;
+  } finally {
+    try {
+      await stopLocalApi(localApi);
+    } catch (error) {
+      console.error(redactText(error?.message || error));
+      process.exitCode = 1;
+    }
   }
-);
+}
+
+main();
