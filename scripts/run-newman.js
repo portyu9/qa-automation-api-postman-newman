@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const newman = require('newman');
+const { ExecutionLedger } = require('./execution-ledger');
 const {
   DEFAULT_LOCAL_API_URL,
   startLocalApi,
@@ -61,10 +62,11 @@ const timeoutRequest = positiveInteger(
   process.env.REQUEST_TIMEOUT_MS,
   10_000
 );
+const executionLedger = new ExecutionLedger();
 
 function executeCollection() {
   return new Promise((resolve, reject) => {
-    newman.run(
+    const run = newman.run(
       {
         collection: collectionPath,
         environment,
@@ -87,6 +89,8 @@ function executeCollection() {
         else resolve(summary);
       }
     );
+
+    run.on('request', (error, args) => executionLedger.record(args, error));
   });
 }
 
@@ -106,6 +110,7 @@ function writeManifest(summary) {
     },
     stats: summary.run.stats,
     timings: summary.run.timings,
+    executions: executionLedger.snapshot(),
     failures: failures.map(compactFailure),
   };
 
