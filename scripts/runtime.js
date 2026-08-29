@@ -4,6 +4,7 @@ const path = require('node:path');
 
 const MAX_FAILURE_MESSAGE = 2_000;
 const MAX_LABEL = 500;
+const SAFE_CORRELATION_TOKEN = /^[A-Za-z0-9._:-]{1,128}$/;
 const URL_PATTERN = /https?:\/\/[^\s"'<>]+/gi;
 const AUTH_PATTERN = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi;
 const SECRET_ASSIGNMENT = /\b(access[_-]?token|token|password|passwd|secret|api[_-]?key|authorization)\b(\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;&}]+)/gi;
@@ -12,6 +13,16 @@ function positiveInteger(name, raw, fallback) {
   const value = raw === undefined || raw === '' ? fallback : Number(raw);
   if (!Number.isInteger(value) || value <= 0) {
     throw new Error(`${name} must be a positive integer`);
+  }
+  return value;
+}
+
+function correlationToken(name, raw, fallback) {
+  const value = String(raw ?? '').trim() || fallback;
+  if (!SAFE_CORRELATION_TOKEN.test(value)) {
+    throw new Error(
+      `${name} must be 1-128 ASCII letters, digits, dots, underscores, colons, or hyphens`
+    );
   }
   return value;
 }
@@ -35,8 +46,8 @@ function absoluteHttpBaseUrl(name, value) {
   } catch {
     throw new Error(`${name} must be an absolute URL`);
   }
-  if (!['http:', 'https:'].includes(parsed.protocol)) {
-    throw new Error(`${name} must use http or https`);
+  if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) {
+    throw new Error(`${name} must use http or https with a hostname`);
   }
   if (parsed.username || parsed.password) {
     throw new Error(`${name} must not contain URL credentials`);
@@ -91,6 +102,7 @@ function compactFailure(failure) {
 module.exports = {
   absoluteHttpBaseUrl,
   compactFailure,
+  correlationToken,
   positiveInteger,
   projectFile,
   redactText,
