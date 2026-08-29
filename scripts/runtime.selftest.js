@@ -5,6 +5,7 @@ const path = require('node:path');
 const {
   absoluteHttpBaseUrl,
   compactFailure,
+  correlationToken,
   positiveInteger,
   projectFile,
   redactText,
@@ -19,13 +20,18 @@ assert.throws(
   () => positiveInteger('REQUEST_TIMEOUT_MS', '0', 10_000),
   /positive integer/
 );
+assert.equal(correlationToken('TEST_RUN_ID', ' newman:contract-42 ', 'fallback'), 'newman:contract-42');
+assert.equal(correlationToken('TEST_RUN_ID', '', 'fallback'), 'fallback');
+for (const value of ['unsafe run id', 'line-break\nheader', 'x'.repeat(129)]) {
+  assert.throws(() => correlationToken('TEST_RUN_ID', value, 'fallback'), /TEST_RUN_ID/);
+}
 assert.equal(
   projectFile(
     root,
-    'collections/jsonplaceholder.postman_collection.json',
+    'collections/posts-api.postman_collection.json',
     'collection'
   ),
-  path.join(root, 'collections/jsonplaceholder.postman_collection.json')
+  path.join(root, 'collections/posts-api.postman_collection.json')
 );
 assert.throws(
   () => projectFile(root, '../outside.json', 'collection'),
@@ -38,6 +44,7 @@ assert.equal(
 );
 for (const value of [
   'localhost:3000',
+  'https://:443',
   'https://user:password@example.test',
   'https://example.test/api?access_token=secret',
   'https://example.test/api#fragment',
