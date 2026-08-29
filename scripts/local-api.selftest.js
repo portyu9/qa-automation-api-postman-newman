@@ -37,12 +37,21 @@ async function main() {
     });
     assert.equal(created.status, 201);
     assert.equal(created.headers.get('x-request-id'), 'fixture-create-1');
-    assert.deepEqual(await created.json(), {
+    const createdBody = await created.json();
+    assert.deepEqual(createdBody, {
       userId: 7,
       id: 101,
       title: 'created',
       body: 'fixture contract',
     });
+
+    const reread = await fetch(`${baseUrl}/posts/${createdBody.id}`);
+    assert.equal(reread.status, 200);
+    assert.deepEqual(await reread.json(), createdBody);
+
+    const collectionAfterCreate = await fetch(`${baseUrl}/posts`);
+    assert.equal(collectionAfterCreate.status, 200);
+    assert.ok((await collectionAfterCreate.json()).some((entry) => entry.id === createdBody.id));
 
     console.log('local API fixture contract: ok');
   } finally {
