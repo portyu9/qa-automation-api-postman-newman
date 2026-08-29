@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "JSONPlaceholder API",
-    "description": "Functional API collection with collection-level response policy, JSON Schema assertions, generated test data, and correlated runs.",
+    "name": "Posts API Quality Contract",
+    "description": "Provider-neutral API collection with collection-level response policy, JSON Schema assertions, generated test data, and correlated runs.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [

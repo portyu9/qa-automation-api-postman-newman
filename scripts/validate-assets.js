@@ -5,7 +5,7 @@ const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
 const assets = [
-  'collections/jsonplaceholder.postman_collection.json',
+  'collections/posts-api.postman_collection.json',
   'postman_environment.json',
   'schemas/post-schema.json',
   'data/posts.json',
