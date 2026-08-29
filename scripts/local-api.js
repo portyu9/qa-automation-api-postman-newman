@@ -30,6 +30,9 @@ async function readJson(req) {
 }
 
 function createLocalApiServer(port = DEFAULT_PORT) {
+  const createdPosts = new Map();
+  let nextPostId = 101;
+
   return http.createServer(async (req, res) => {
     const requestUrl = new URL(req.url, `http://${HOST}:${port}`);
     const requestId = req.headers['x-request-id'];
@@ -40,28 +43,30 @@ function createLocalApiServer(port = DEFAULT_PORT) {
       }
 
       if (req.method === 'GET' && requestUrl.pathname === '/posts') {
-        return sendJson(res, 200, [post(1), post(2, 2), post(3, 3)], requestId);
+        return sendJson(
+          res,
+          200,
+          [post(1), post(2, 2), post(3, 3), ...createdPosts.values()],
+          requestId
+        );
       }
 
       const itemMatch = requestUrl.pathname.match(/^\/posts\/(\d+)$/);
       if (req.method === 'GET' && itemMatch) {
         const id = Number(itemMatch[1]);
-        return sendJson(res, 200, post(id), requestId);
+        return sendJson(res, 200, createdPosts.get(id) || post(id), requestId);
       }
 
       if (req.method === 'POST' && requestUrl.pathname === '/posts') {
         const payload = await readJson(req);
-        return sendJson(
-          res,
-          201,
-          {
-            userId: Number(payload.userId),
-            id: 101,
-            title: String(payload.title || ''),
-            body: String(payload.body || ''),
-          },
-          requestId
-        );
+        const created = {
+          userId: Number(payload.userId),
+          id: nextPostId++,
+          title: String(payload.title || ''),
+          body: String(payload.body || ''),
+        };
+        createdPosts.set(created.id, created);
+        return sendJson(res, 201, created, requestId);
       }
 
       return sendJson(res, 404, { error: 'not_found' }, requestId);
