@@ -19,7 +19,7 @@ const {
 const root = path.resolve(__dirname, '..');
 const collectionPath = projectFile(
   root,
-  process.env.NEWMAN_COLLECTION || 'collections/jsonplaceholder.postman_collection.json',
+  process.env.NEWMAN_COLLECTION || 'collections/posts-api.postman_collection.json',
   'NEWMAN_COLLECTION'
 );
 const environmentPath = projectFile(
