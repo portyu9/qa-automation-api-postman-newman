@@ -12,6 +12,7 @@ const {
 const {
   absoluteHttpBaseUrl,
   compactFailure,
+  correlationToken,
   positiveInteger,
   projectFile,
   redactText,
@@ -51,7 +52,7 @@ baseUrlEntry.value = absoluteHttpBaseUrl(
   process.env.NEWMAN_BASE_URL || baseUrlEntry.value
 );
 
-const runId = process.env.TEST_RUN_ID || `newman-${Date.now()}`;
+const runId = correlationToken('TEST_RUN_ID', process.env.TEST_RUN_ID, `newman-${Date.now()}`);
 const runIdEntry = environment.values.find((entry) => entry.key === 'run_id');
 if (runIdEntry) runIdEntry.value = runId;
 else environment.values.push({ key: 'run_id', value: runId, enabled: true });
