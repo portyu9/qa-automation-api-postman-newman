@@ -14,44 +14,48 @@
 [![License](https://img.shields.io/badge/License-MIT-2EA44F?logo=opensourceinitiative&logoColor=white)](LICENSE)
 [![Security Policy](https://img.shields.io/badge/Security-Policy-24292F?logo=github&logoColor=white)](.github/SECURITY.md)
 
-A version-controlled API quality-engineering framework built around Postman collections and the Newman execution engine. The collection owns request and assertion semantics; the Node runner owns validated input provenance, target policy, timeout policy, schema injection, correlation, reporting, and process-exit integrity. A deterministic loopback API provides a broader data-driven validation path without making extended CI dependent on a public service.
+A version-controlled API quality-engineering framework built around **Postman Collection v2.1** and the **Newman** execution engine. Postman assets own request and assertion semantics; the Node runner owns validated input provenance, deterministic target lifecycle, schema injection, timeout policy, run/request correlation, evidence construction, and process-exit integrity.
 
 > [!IMPORTANT]
-> Postman assets remain the source of API-test intent. The Node layer governs execution; it does not reimplement collection assertions. That boundary keeps the collection portable while making CI inputs, evidence, and safety policy explicit and reviewable.
+> Required execution does not depend on a public API. The committed environment targets `http://127.0.0.1:4010`, and `scripts/run-newman.js` starts and stops the repository-owned protocol fixture when that default target is selected. A deployed API remains available through an explicit `NEWMAN_BASE_URL` override.
 
 ## Capability map
 
 | Plane | What it proves | Target model | Evidence |
 | --- | --- | --- | --- |
-| Primary CI | Collection semantics against configured API | Reviewed HTTP(S) target | JUnit + sanitized run manifest |
-| Asset/runtime validation | Export integrity, path containment, URL/timeouts, reporter policy | No request required for self-tests | Node validation output |
-| Extended data contract | Full collection + iteration data + request/write semantics | Deterministic `127.0.0.1` API | JUnit, manifest, local API log |
+| Asset/runtime validation | Export integrity, path containment, target/timeouts, fixture protocol, reporter policy | No external dependency | Node assertions + process status |
+| Primary collection | Request/assertion/schema/write semantics | Runner-owned loopback API | JUnit + sanitized run manifest |
+| Data-driven contract | Iteration precedence across read/write cases | Same runner-owned loopback API | JUnit + manifest |
+| Explicit integration | Same collection against a reviewed deployment | Explicit HTTP(S) override | JUnit + manifest with external target classification |
 | Security | Dependency/configuration exposure | Repository filesystem | Trivy JSON + Markdown summary |
-| Documentation contract | README links, workflow badges, Mermaid declarations, governance surfaces, badge palette | Repository-local Python stdlib validation | Actions status |
-| Observability | Execution identity and gate state | Structured run envelope | `reports/ci-observability.json`, Actions summary |
+| Documentation | README/workflow/governance consistency | Repository-local validator | Actions status |
+| Observability | Run identity, target class, final gate state | Structured execution envelope | `reports/` + Actions summary |
 
 ```mermaid
 flowchart LR
-    CLI[npm / CI] --> RUN[run-newman.js]
+    CLI[npm / CI] --> VALIDATE[Asset + runtime + fixture self-tests]
+    CLI --> RUN[run-newman.js]
     RUN --> POLICY[runtime.js]
-    RUN --> COL[Collection]
-    RUN --> ENV[Environment]
-    RUN --> DATA[Iteration data]
-    RUN --> SCHEMA[Versioned schema]
-    POLICY --> TARGET[Validated base URL]
-    COL --> TARGET
-    EXT[Extended workflow] --> LOCAL[Loopback protocol-compatible API]
+    RUN --> ENV[Postman environment]
+    RUN --> COL[Postman collection]
+    RUN --> SCHEMA[Versioned JSON schema]
+    RUN --> DATA[Optional iteration data]
+    ENV --> TARGET{Resolved base_url}
+    TARGET -->|default| LOCAL[Runner-owned loopback API]
+    TARGET -->|explicit override| EXT[Reviewed deployed API]
     COL --> LOCAL
+    COL --> EXT
     RUN --> JUNIT[JUnit]
-    RUN --> MAN[Sanitized manifest]
-    DOCS[README contract] --> GOVERN[Repository governance]
+    RUN --> MAN[Allowlisted run manifest]
 
     classDef entry fill:#ddf4ff,stroke:#0969da,color:#24292f,stroke-width:1.5px;
     classDef core fill:#f6f8fa,stroke:#57606a,color:#24292f,stroke-width:1.5px;
+    classDef gate fill:#fbefff,stroke:#8250df,color:#24292f,stroke-width:1.5px;
     classDef evidence fill:#dafbe1,stroke:#1a7f37,color:#24292f,stroke-width:1.5px;
-    class CLI,EXT,DOCS entry;
-    class RUN,POLICY,COL,ENV,DATA,SCHEMA,TARGET,LOCAL core;
-    class JUNIT,MAN,GOVERN evidence;
+    class CLI entry;
+    class POLICY,ENV,COL,SCHEMA,DATA,TARGET,LOCAL,EXT core;
+    class VALIDATE,RUN gate;
+    class JUNIT,MAN evidence;
     linkStyle default stroke:#57606a,stroke-width:1.4px;
 ```
 
@@ -59,66 +63,65 @@ flowchart LR
 
 | Concern | Framework contract |
 | --- | --- |
-| Collection ownership | Shared protocol policy lives at collection scope; endpoint semantics stay with each request. |
+| Collection ownership | Request definitions and assertions remain in Postman assets, not duplicated in Node code. |
+| Default target | The committed `base_url` is `http://127.0.0.1:4010`. |
+| Target lifecycle | `run-newman.js` starts/stops the local API only when the resolved target equals the deterministic default. |
+| External integration | A non-default `NEWMAN_BASE_URL` is explicit and is classified separately in evidence. |
 | Runtime files | Collection/environment/data overrides must resolve inside the repository root. |
 | Target policy | Resolved `base_url` must be absolute HTTP(S), with no URL credentials, query, or fragment. |
-| Schemas | Reusable JSON Schemas are normal version-controlled files, injected at runtime. |
-| Variable precedence | Iteration data intentionally overrides environment values for data-driven `post_id` / `user_id` expectations. |
-| Secrets | Committed environments contain non-secret defaults only; credentials are injected through controlled runtime channels. |
-| Correlation | Run and request IDs identify execution without becoming payload/credential carriers. |
-| Exit integrity | Newman assertion/runtime failures preserve a nonzero process result; reporters and cleanup cannot convert failure to success. |
-| Evidence | JUnit plus a narrow allowlisted manifest; raw Newman JSON is not retained by default. |
+| Schemas | Reusable JSON Schemas are version-controlled files injected at runtime. |
+| Variable precedence | Iteration data intentionally overrides environment `post_id` / `user_id` where supplied. |
+| Correlation | Run and request IDs identify execution without becoming credential/payload carriers. |
+| Exit integrity | Validation, Newman assertion/runtime, fixture startup, and fixture cleanup failures remain nonzero. |
+| Evidence | Retain JUnit plus a narrow allowlisted manifest; raw Newman JSON is not retained by default. |
 | Reproducibility | Node 22+, Newman `6.2.2`, committed lockfile, `npm ci`. |
-| Documentation | README-local references, workflow badges, Mermaid roots, governance files, and static badge-color uniqueness are executable contracts. |
+| CI safety | Read-only permissions, duplicate-run cancellation, and bounded job runtime are enforced. |
 
 ## Tool ownership model
 
-| Tool / technology | Native responsibility | Framework responsibility | Deliberately left visible |
-| --- | --- | --- | --- |
-| Postman Collection v2.1 | Request definitions, folders, pre-request/test scripts, variable references, portable API-test intent | Keep shared policy at collection scope and endpoint semantics adjacent to each request | `pm.*` assertion/runtime semantics remain the contract language |
-| Newman | Execute the collection, honor Postman runtime semantics, select folders/data, emit reporter results and process status | Validate all execution inputs before launch, inject schemas/correlation/target, preserve exit status, produce bounded evidence | Newman failures/statistics remain authoritative; the wrapper is not a second assertion engine |
-| Postman variable scopes | Environment, iteration data, local/collection/global lookup semantics | Use narrow scope intentionally; iteration data wins where a data-driven case supplies identifiers | Variable-precedence behavior is explicit in collection assertions rather than hidden in Node preprocessing |
-| JSON Schema assertions | Structural response validation through Postman runtime | Store reusable schema once under `schemas/` and inject its text | Schema success does not replace semantic assertions such as requested ID or echoed write data |
-| Node runtime | Filesystem/process/HTTP primitives | Repository-root path containment, local API fixture, timeout parsing, atomic manifest writing | Node policy failures occur before Newman rather than appearing as API assertion failures |
-| Local protocol fixture | Built-in Node HTTP listener semantics | Deterministic read/write/health/request-ID contract on loopback | It is a test dependency, not a production-service emulator |
-| JUnit reporter | CI-compatible assertion representation | Retain focused JUnit evidence alongside the allowlisted manifest | Reporter output cannot override Newman process status |
-| Trivy | Filesystem vulnerability and supported misconfiguration analysis | HIGH/CRITICAL remediation-oriented gate and retained findings | Configured `vuln,misconfig` scan is not generic credential/secret scanning |
-| GitHub Actions | Job scheduling, environment isolation, artifacts | Primary/local-extended/security/docs separation and observability envelope | Native job/process exit status remains authoritative |
+| Tool / technology | Native responsibility | Framework responsibility |
+| --- | --- | --- |
+| Postman Collection v2.1 | Request definitions, folders, scripts, variable references, assertions | Keep protocol-wide policy at collection scope and endpoint semantics adjacent to each request |
+| Newman | Execute Postman runtime semantics, folders/data, reporters, failure status | Govern inputs/target lifecycle, inject schema/correlation, preserve exit status, produce bounded evidence |
+| Postman variable scopes | Environment, iteration, local, global lookup semantics | Use narrow lifetime; explicitly honor iteration-over-environment precedence |
+| JSON Schema assertions | Structural response validation | Store reusable schema under `schemas/` and inject once |
+| Node HTTP | Listener/request/response semantics | Small deterministic API fixture for required collection execution |
+| Node runtime | Filesystem/process lifecycle | Repository path containment, target validation, fixture ownership, atomic manifest writing |
+| JUnit reporter | CI-compatible assertion representation | Retain focused machine evidence without weakening Newman status |
+| GitHub Actions | Scheduling/artifact transport | Gate separation, correlation, bounded execution |
+| Trivy | Supported vulnerability/misconfiguration analysis | HIGH/CRITICAL remediation gate |
 
 ## Repository map
 
 ```text
 .
-├── collections/jsonplaceholder.postman_collection.json
-├── schemas/post-schema.json
-├── data/posts.json
+├── collections/
+│   └── jsonplaceholder.postman_collection.json
+├── schemas/
+│   └── post-schema.json
+├── data/
+│   └── posts.json
 ├── scripts/
 │   ├── run-newman.js
 │   ├── runtime.js
 │   ├── runtime.selftest.js
 │   ├── validate-assets.js
-│   └── local-api.js
+│   ├── local-api.js
+│   └── local-api.selftest.js
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   └── TEST_STRATEGY.md
 ├── .github/
-│   ├── scripts/
-│   │   └── validate_readme.py
+│   ├── CODEOWNERS
+│   ├── SECURITY.md
+│   ├── pull_request_template.md
+│   ├── scripts/validate_readme.py
 │   └── workflows/
-│       ├── ci.yml
-│       ├── docs.yml
-│       ├── extended.yml
-│       └── security.yml
+├── CONTRIBUTING.md
 ├── postman_environment.json
 ├── package.json
 └── package-lock.json
 ```
-
-## Documentation contract
-
-`.github/workflows/docs.yml` validates deterministic repository-local documentation facts on every pull request and `main`: local Markdown targets, committed workflow badge targets, Mermaid declarations, root `LICENSE`, `.github/SECURITY.md`, unique static Shields colors, and the GitHub-dark `#24292F` Security Policy badge. External website uptime is deliberately outside this contract.
-
-The badge palette preserves family identity without duplicating colors: Postman retains official `#FF6C37`; Newman uses darker Postman-family `#C84A22` rather than an unrelated brand color.
 
 ## Quick start
 
@@ -128,133 +131,136 @@ Node.js 22+ is required.
 npm ci
 npm run validate
 npm test
-python .github/scripts/validate_readme.py
 ```
 
-Read-only smoke folder:
+`npm test` requires no manually started API for the default configuration. The runner owns the loopback service lifecycle.
+
+Run only the read folder:
 
 ```bash
 npm run test:smoke
 ```
 
-Data-driven execution:
+Run the full collection with iteration data:
 
 ```bash
 NEWMAN_ITERATION_DATA=data/posts.json npm test
 ```
 
-Reviewed target override:
+Run against an explicit deployed environment:
 
 ```bash
 NEWMAN_BASE_URL=https://staging.example.test npm test
 ```
 
-> [!NOTE]
-> `npm ci` is the execution path. Dependency changes should be made deliberately with `npm install`, reviewed through the manifest/lockfile diff, and then validated by CI.
+A non-default target is treated as integration execution. Its availability should not redefine whether the deterministic framework gate is healthy.
 
-<details>
-<summary><strong>Runtime input reference</strong></summary>
+## Runtime input reference
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `NEWMAN_COLLECTION` | Collection path inside repository | `collections/jsonplaceholder.postman_collection.json` |
 | `NEWMAN_ENVIRONMENT` | Environment path inside repository | `postman_environment.json` |
 | `NEWMAN_ITERATION_DATA` | Optional iteration-data path | unset |
-| `NEWMAN_FOLDER` | Optional Postman folder selector | unset |
-| `NEWMAN_BASE_URL` | Validated target override | environment `base_url` |
+| `NEWMAN_FOLDER` | Optional folder selector | unset |
+| `NEWMAN_BASE_URL` | Explicit validated target override | environment `base_url` |
 | `REQUEST_TIMEOUT_MS` | Per-request timeout | `10000` |
 | `TEST_RUN_ID` | Run correlation | generated ID |
 
-Paths are execution inputs, not arbitrary filesystem escape hatches. `runtime.js` resolves them relative to the repository root and rejects traversal outside it.
+The committed environment defaults `base_url` to `http://127.0.0.1:4010`. Paths are resolved relative to the repository and traversal outside it is rejected.
 
-</details>
+## Deterministic target lifecycle
+
+`scripts/local-api.js` implements the exact protocol surface required by the collection using Node's built-in HTTP module:
+
+- `GET /health`;
+- `GET /posts`;
+- `GET /posts/:id`;
+- `POST /posts`;
+- JSON response content type;
+- request-ID echo;
+- deterministic create representation;
+- explicit 404/400 responses.
+
+`scripts/run-newman.js` resolves and validates the effective `base_url`. When it equals the local default, the runner:
+
+1. starts the fixture;
+2. waits for the listener through the server's own asynchronous start contract;
+3. executes Newman;
+4. writes the sanitized manifest;
+5. closes the fixture in `finally`.
+
+There is no shell-managed background process or readiness polling in required CI. Startup/cleanup are part of the runner's process lifecycle and failures remain nonzero.
+
+When `NEWMAN_BASE_URL` selects another safe HTTP(S) target, the runner does not start the local server.
+
+## Fixture self-test
+
+`npm run validate` executes `scripts/local-api.selftest.js` before Newman. It binds an ephemeral loopback port and proves the fixture independently:
+
+- health response;
+- non-empty post collection;
+- arbitrary item lookup;
+- request-ID propagation;
+- POST creation status and representation.
+
+This separates fixture defects from collection assertion defects and gives protocol lifecycle code a zero-public-network contract.
 
 ## Collection architecture
 
-Collection-level scripts own cross-request policy only:
+Collection-level scripts own only cross-request policy:
 
 - run/request correlation;
-- response-time budget;
-- common JSON content-type expectations.
+- shared response-time budget;
+- JSON content-type expectation.
 
 Endpoint scripts own endpoint semantics:
 
 - status;
 - schema;
 - requested identifier equality;
-- write representation/echo behavior;
-- endpoint-specific negative conditions.
+- write echo/representation.
 
-This avoids two common extremes: duplicated protocol boilerplate in every request, and a giant global script that hides which endpoint contract actually failed.
+The Node runner does not reimplement these assertions. That keeps the same collection portable to Postman/Newman while allowing CI/runtime policy to remain explicit in code.
 
 ## Variable scope and precedence
 
 | Variable | Scope | Purpose |
 | --- | --- | --- |
 | `base_url` | environment | Validated service target |
-| `post_id` | environment / iteration | Read identifier; iteration value wins when supplied |
-| `user_id` | environment / iteration | Write input; iteration value wins when supplied |
+| `post_id` | environment / iteration | Read identifier; iteration value wins |
+| `user_id` | environment / iteration | Write input; iteration value wins |
 | `max_response_time_ms` | environment | Shared response-time budget |
 | `run_id` | injected environment | Run correlation |
-| `request_id` | local | Individual request correlation |
+| `request_id` | local | Per-request correlation |
 | `generated_title` | local | Unique write-case value |
 | `post_schema` | injected global | Version-controlled schema text |
 
-Use the narrowest scope that expresses data lifetime. Generated request-local values should not become mutable environment state unless a later request intentionally consumes them. Data-driven assertions explicitly consult `pm.iterationData` before environment fallback so the assertion evaluates the same identifier/input that drove the request.
+Use the narrowest variable scope that matches data lifetime. Request-local generated values should not be promoted to mutable environment state unless later requests intentionally consume them.
 
 ## Schema strategy
 
-`schemas/post-schema.json` is stored once and injected into Newman at runtime. This keeps schema changes reviewable and reusable without duplicating schema blobs inside collection scripts.
-
-Schema correctness is necessary but not sufficient. A structurally valid response can still return the wrong record or wrong semantic values, so request tests assert both shape and key semantics.
+`schemas/post-schema.json` is stored once and injected as a Newman global. Schema correctness supplements semantic assertions; it cannot prove that the correct record or values were returned by itself.
 
 ## Execution governance
 
-`scripts/runtime.selftest.js` validates Node-side policy without contacting a target:
+`npm run validate` proves Node-side policy before collection execution:
 
-- default/explicit timeout parsing;
-- invalid/non-positive timeout rejection;
-- repository-contained file resolution;
-- path traversal rejection;
+- committed JSON asset integrity;
+- suspicious committed secret guards;
+- path containment and traversal rejection;
+- positive timeout parsing;
 - HTTP(S) target validation;
-- rejection of URL credentials/query/fragment;
+- URL credential/query/fragment rejection;
 - diagnostic URL sanitization;
-- bounded compact failure mapping.
+- bounded/redacted failure compaction;
+- executable local API protocol behavior.
 
-`scripts/validate-assets.js` checks committed collection/environment assets before Newman starts. `scripts/local-api.js` is syntax-checked as part of the same validation command.
+A launcher, target-policy, or fixture defect should be reproducible without a public service.
 
-## Deterministic extended data contract
+## Run manifest and target classification
 
-`extended.yml` executes the full data-driven collection against `scripts/local-api.js`, a small protocol-compatible loopback service implemented with Node's built-in HTTP module.
-
-The service supports the exact contract exercised by the collection:
-
-- `GET /health` for bounded readiness;
-- `GET /posts`;
-- `GET /posts/:id`;
-- `POST /posts` with deterministic creation representation;
-- JSON content type and request-ID echo.
-
-Execution flow:
-
-```text
-start local-api.js on 127.0.0.1:4010
-        ↓
-bounded readiness polling
-        ↓
-NEWMAN_BASE_URL=http://127.0.0.1:4010
-NEWMAN_ITERATION_DATA=data/posts.json
-        ↓
-full Newman collection
-        ↓
-JUnit + sanitized manifest + local API log
-```
-
-This validates collection scripts, variable precedence, iteration data, schema injection, runner governance, reporting, read/write semantics, and the real local HTTP path while eliminating public-service drift from the extended gate.
-
-## Run manifest and exit semantics
-
-After execution, `scripts/run-newman.js` writes:
+After execution the runner writes:
 
 ```text
 reports/
@@ -262,124 +268,111 @@ reports/
 └── run-manifest.json
 ```
 
-The manifest records schema/run identity, relative collection/environment/data provenance, selected folder, sanitized validated base URL, request timeout, Newman stats/timings, and compact bounded/redacted failure identity. It is written atomically via a temporary file.
+The manifest contains an allowlisted execution contract:
 
-Raw Newman JSON is not a default artifact because third-party runtime objects can contain substantially more context than the operational contract needs. The runner instead constructs a narrow allowlist. More evidence is not automatically safer evidence.
+- schema version/run ID;
+- relative collection/environment/data paths;
+- optional folder;
+- validated base URL;
+- `targetClass` — `local-fixture` or `explicit-external`;
+- request timeout;
+- Newman stats/timings;
+- compact bounded/redacted failures.
 
-Most importantly, manifest/report generation is **secondary** to Newman's exit result. Assertion or runtime failure must remain nonzero. `|| true`, swallowed callback errors, or cleanup/reporting wrappers that turn a failing collection green violate the framework contract.
+The manifest is written atomically through a temporary path. Raw Newman JSON remains intentionally disabled because arbitrary third-party runtime structures can expose far more context than CI needs.
 
-## Security engineering
+## Exit semantics
 
-`.github/workflows/security.yml` runs the open-source Trivy filesystem scanner. The action is pinned to immutable commit `ed142fd0673e97e23eac54620cfb913e5ce36c25` (`v0.36.0`) and installs Trivy `v0.74.0`.
+A generated report never converts failure into success. The runner preserves nonzero status for:
 
-The gate focuses on configured fixed HIGH/CRITICAL dependency vulnerabilities and HIGH/CRITICAL supported repository/configuration misconfigurations. Evidence is retained as JSON plus a Markdown count summary. Its configured scanners are `vuln,misconfig`; the repository does not claim that workflow as generic credential/secret scanning.
+- input/runtime validation failure;
+- fixture startup failure;
+- Newman runtime failure;
+- collection assertion failure;
+- manifest/lifecycle failure;
+- fixture cleanup failure.
 
-Collection/export validation remains complementary: Trivy does not replace the framework's own target/path/runtime validation.
+This keeps evidence generation secondary to correctness.
 
-## Observability model
+## Primary versus extended CI
 
-Primary CI produces:
+Primary CI runs the default collection against the runner-owned fixture. Extended CI adds `data/posts.json` and runs the full data-driven contract against the **same** runner-owned fixture.
 
-```text
-reports/
-├── newman-junit.xml
-├── run-manifest.json
-├── ci-observability.json
-└── ci-summary.md
-```
-
-`ci-observability.json` supplies a small stable run-level index: framework, run ID, runtime dimension, final job state, SHA, and ref. The Newman manifest supplies API-execution provenance/statistics; JUnit supplies assertion integration.
-
-```text
-GitHub Actions run
-└── TEST_RUN_ID
-    ├── collection/environment/data provenance
-    ├── per-request request_id values
-    ├── Newman stats/failures
-    └── CI observability envelope
-```
-
-No proprietary analytics backend is required; the JSON artifacts can be ingested later by open-source log/telemetry tooling.
-
-## CI topology
+The difference between the gates is test-data breadth, not target determinism.
 
 ```mermaid
 flowchart TD
-    PR[Push / PR] --> INSTALL[npm ci]
-    INSTALL --> VALIDATE[Asset + runtime validation]
-    VALIDATE --> NEWMAN[Primary collection]
-    NEWMAN --> REPORT[JUnit + manifest + observability]
-    PR --> SEC[Trivy security]
-    PR --> DOCS[README contract]
-    APICHANGE[Collection/schema/runner change] --> EXT[Extended local data contract]
-    EXT --> LOCAL[Loopback API]
-    LOCAL --> FULL[Full data-driven collection]
-    FULL --> REPORT2[Independent evidence]
-    DOCS --> REPORT2
+    CHANGE[Change] --> VALIDATE[npm run validate]
+    VALIDATE --> PRIMARY[Primary collection]
+    PRIMARY --> FIX[Runner-owned local API]
+    PRIMARY --> EVIDENCE[JUnit + manifest + observability]
+    CHANGE --> EXT[Extended data-driven collection]
+    EXT --> FIX
+    EXT --> EVIDENCE
+    CHANGE --> SEC[Trivy]
+    CHANGE --> DOCS[Docs contract]
 
     classDef entry fill:#ddf4ff,stroke:#0969da,color:#24292f,stroke-width:1.5px;
     classDef core fill:#f6f8fa,stroke:#57606a,color:#24292f,stroke-width:1.5px;
     classDef gate fill:#fbefff,stroke:#8250df,color:#24292f,stroke-width:1.5px;
     classDef evidence fill:#dafbe1,stroke:#1a7f37,color:#24292f,stroke-width:1.5px;
-    classDef security fill:#ffebe9,stroke:#cf222e,color:#24292f,stroke-width:1.5px;
-    class PR,APICHANGE entry;
-    class INSTALL,VALIDATE core;
-    class NEWMAN,EXT,LOCAL,FULL,DOCS gate;
-    class SEC security;
-    class REPORT,REPORT2 evidence;
+    class CHANGE entry;
+    class FIX core;
+    class VALIDATE,PRIMARY,EXT,SEC,DOCS gate;
+    class EVIDENCE evidence;
     linkStyle default stroke:#57606a,stroke-width:1.4px;
 ```
 
-## Failure triage
+## Failure classification
 
-| Signal | First boundary | First evidence |
-| --- | --- | --- |
-| Invalid export/JSON | Asset integrity | `npm run validate` |
-| Path escape | Runtime governance | `runtime.js` validation |
-| Invalid target URL | Target policy | pre-Newman validation error |
-| Invalid timeout | Runtime policy | pre-Newman validation error |
-| Request/connectivity | HTTP dependency | Newman CLI + JUnit |
-| Schema/assertion | API contract | JUnit + compact manifest failure |
-| Data iteration mismatch | Variable/input provenance | manifest + dataset + endpoint assertion |
-| Local extended failure | Collection/runner/local protocol path | local API log + manifest |
-| Unexpected zero tests | Selection/provenance | Newman stats + folder/path inputs |
-| README contract | Documentation/governance drift | Validator output |
-| Trivy failure | Dependency/configuration risk | `trivy.json` |
+| Signal | First interpretation |
+| --- | --- |
+| Asset validation | Export/configuration policy |
+| Runtime self-test | Path/URL/timeout/evidence policy |
+| Fixture self-test | Local protocol fixture defect |
+| Local fixture startup | Listener/port lifecycle |
+| Newman runtime | Runner/Postman runtime/transport |
+| Endpoint assertion/schema | API behavior contract |
+| Iteration mismatch | Variable/data precedence |
+| External-target-only failure | Deployment/environment integration |
+| Security | Dependency/configuration risk |
+| Docs | Repository documentation/governance drift |
+
+## Security and documentation governance
+
+`.github/workflows/security.yml` runs Trivy filesystem vulnerability/misconfiguration analysis and preserves findings. `.github/workflows/docs.yml` validates repository-local links, workflow badges, Mermaid declarations, governance surfaces, and badge constraints.
+
+Change expectations are documented in [`CONTRIBUTING.md`](CONTRIBUTING.md), with explicit ownership in [`.github/CODEOWNERS`](.github/CODEOWNERS).
 
 ## Extension rules
 
-1. keep shared collection scripts small and policy-focused;
-2. keep endpoint semantics adjacent to each request;
-3. store reusable schemas under `schemas/`;
-4. keep data files reviewed and repository-contained;
-5. validate every new Node-side execution input;
-6. make variable precedence explicit when environment and iteration scopes can both provide a value;
-7. preserve target and input provenance in evidence;
-8. inject credentials through controlled runtime mechanisms rather than URLs;
-9. preserve Newman as the request/assertion engine and its process status as authoritative;
-10. prefer deterministic local protocol fixtures for broader CI scenarios;
-11. keep raw retained evidence intentionally narrow;
-12. update README contracts when public inputs, workflows, collection responsibilities, or evidence surfaces change.
+When extending the framework:
+
+1. keep request/assertion intent in Postman assets;
+2. keep required target lifecycle deterministic and repository-owned;
+3. validate new filesystem/runtime inputs before Newman starts;
+4. add fixture behavior only for protocol contracts the collection actually exercises;
+5. add zero-public-network self-tests for new Node policy/lifecycle code;
+6. preserve narrow variable scopes and documented precedence;
+7. construct evidence from an allowlist rather than serializing arbitrary runtime objects;
+8. preserve Newman and lifecycle exit status;
+9. classify explicit deployed-target execution separately from the local framework gate.
 
 ## Explicit anti-patterns
 
-- collection/environment/data paths outside the repository;
-- URL credentials/query secrets/fragments;
-- committed environment credentials;
-- ambiguous iteration/environment precedence;
-- raw Newman summaries retained without a data contract;
-- duplicated schema blobs inside scripts;
-- assertion failures converted to zero exit status;
-- endpoint-specific logic hidden in one giant collection hook;
-- status-only assertions;
-- reports without input provenance;
-- `npm install` in CI;
-- README claims or badge surfaces not backed by committed repository state.
+- required CI against a public demonstration API;
+- shell background-process orchestration when the runner owns the fixture lifecycle;
+- Node assertions duplicating Postman endpoint assertions;
+- path overrides that can escape the repository;
+- credentials embedded in `base_url`;
+- raw environment/header/body logging;
+- raw Newman JSON retained by default without a reviewed need/redaction model;
+- `|| true` or cleanup code that hides failing collection status;
+- data-driven iterations that depend on previous iteration state.
 
 ## Design references
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — collection, runner, schema, target, and evidence boundaries.
-- [`docs/TEST_STRATEGY.md`](docs/TEST_STRATEGY.md) — assertion depth, data-driven execution, environment promotion, and gates.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — collection/runner/fixture/evidence boundaries.
+- [`docs/TEST_STRATEGY.md`](docs/TEST_STRATEGY.md) — gate selection, local target policy, data-driven execution, evidence, and exit criteria.
 
-> [!TIP]
-> The goal is portable Postman intent with governed Newman execution. The runner should make a collection easier to operate safely and diagnose precisely—not become a second API testing language beside it.
+A strong Newman framework makes the failing boundary obvious: asset policy, runner policy, fixture lifecycle, Postman runtime, API behavior, data precedence, explicit environment integration, or retained evidence.
