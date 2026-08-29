@@ -13,6 +13,7 @@ const {
   absoluteHttpBaseUrl,
   compactFailure,
   correlationToken,
+  optionalLabel,
   positiveInteger,
   projectFile,
   redactText,
@@ -34,6 +35,7 @@ const reportsDir = path.resolve(root, 'reports');
 const iterationData = process.env.NEWMAN_ITERATION_DATA
   ? projectFile(root, process.env.NEWMAN_ITERATION_DATA, 'NEWMAN_ITERATION_DATA')
   : undefined;
+const folder = optionalLabel('NEWMAN_FOLDER', process.env.NEWMAN_FOLDER);
 
 fs.mkdirSync(reportsDir, { recursive: true });
 const environment = JSON.parse(fs.readFileSync(environmentPath, 'utf8'));
@@ -41,20 +43,26 @@ if (!Array.isArray(environment.values)) {
   throw new Error('Postman environment must contain a values array');
 }
 
-const baseUrlEntry = environment.values.find(
+const enabledBaseUrls = environment.values.filter(
   (entry) => entry.key === 'base_url' && entry.enabled !== false
 );
-if (!baseUrlEntry) {
-  throw new Error('Postman environment must define an enabled base_url value');
+if (enabledBaseUrls.length !== 1) {
+  throw new Error('Postman environment must define exactly one enabled base_url value');
 }
+const baseUrlEntry = enabledBaseUrls[0];
 baseUrlEntry.value = absoluteHttpBaseUrl(
   'base_url',
   process.env.NEWMAN_BASE_URL || baseUrlEntry.value
 );
 
 const runId = correlationToken('TEST_RUN_ID', process.env.TEST_RUN_ID, `newman-${Date.now()}`);
-const runIdEntry = environment.values.find((entry) => entry.key === 'run_id');
-if (runIdEntry) runIdEntry.value = runId;
+const enabledRunIds = environment.values.filter(
+  (entry) => entry.key === 'run_id' && entry.enabled !== false
+);
+if (enabledRunIds.length > 1) {
+  throw new Error('Postman environment must not define duplicate enabled run_id values');
+}
+if (enabledRunIds.length === 1) enabledRunIds[0].value = runId;
 else environment.values.push({ key: 'run_id', value: runId, enabled: true });
 
 const postSchema = JSON.parse(fs.readFileSync(schemaPath, 'utf8'));
@@ -64,6 +72,59 @@ const timeoutRequest = positiveInteger(
   10_000
 );
 const executionLedger = new ExecutionLedger();
+
+function nonNegativeInteger(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number >= 0 ? number : null;
+}
+
+function nonNegativeNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function compactCounter(value = {}) {
+  return {
+    total: nonNegativeInteger(value.total),
+    pending: nonNegativeInteger(value.pending),
+    failed: nonNegativeInteger(value.failed),
+  };
+}
+
+function compactStats(stats = {}) {
+  return {
+    iterations: compactCounter(stats.iterations),
+    items: compactCounter(stats.items),
+    requests: compactCounter(stats.requests),
+    tests: compactCounter(stats.tests),
+    assertions: compactCounter(stats.assertions),
+  };
+}
+
+function safeIso(value) {
+  if (value === undefined || value === null) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
+function compactTimings(timings = {}) {
+  const startedAt = safeIso(timings.started);
+  const completedAt = safeIso(timings.completed);
+  const startedMs = startedAt ? Date.parse(startedAt) : NaN;
+  const completedMs = completedAt ? Date.parse(completedAt) : NaN;
+  return {
+    startedAt,
+    completedAt,
+    durationMs:
+      Number.isFinite(startedMs) && Number.isFinite(completedMs) && completedMs >= startedMs
+        ? completedMs - startedMs
+        : null,
+    responseAverageMs: nonNegativeNumber(timings.responseAverage),
+    responseMinMs: nonNegativeNumber(timings.responseMin),
+    responseMaxMs: nonNegativeNumber(timings.responseMax),
+    responseSdMs: nonNegativeNumber(timings.responseSd),
+  };
+}
 
 function executeCollection() {
   return new Promise((resolve, reject) => {
@@ -75,7 +136,7 @@ function executeCollection() {
           values: [{ key: 'post_schema', value: JSON.stringify(postSchema), enabled: true }],
         },
         iterationData,
-        folder: process.env.NEWMAN_FOLDER || undefined,
+        folder: folder || undefined,
         timeoutRequest,
         // Raw Newman JSON can serialize substantially more runtime context than
         // the operational evidence contract requires. Retain focused JUnit plus
@@ -96,7 +157,7 @@ function executeCollection() {
 }
 
 function writeManifest(summary) {
-  const failures = summary.run.failures || [];
+  const failures = Array.isArray(summary.run.failures) ? summary.run.failures : [];
   const manifest = {
     schemaVersion: 1,
     runId,
@@ -104,13 +165,13 @@ function writeManifest(summary) {
       collection: path.relative(root, collectionPath),
       environment: path.relative(root, environmentPath),
       iterationData: iterationData ? path.relative(root, iterationData) : null,
-      folder: process.env.NEWMAN_FOLDER || null,
+      folder: folder ? redactText(folder) : null,
       baseUrl: baseUrlEntry.value,
       targetClass: baseUrlEntry.value === DEFAULT_LOCAL_API_URL ? 'local-fixture' : 'explicit-external',
       timeoutRequestMs: timeoutRequest,
     },
-    stats: summary.run.stats,
-    timings: summary.run.timings,
+    stats: compactStats(summary.run.stats),
+    timings: compactTimings(summary.run.timings),
     executions: executionLedger.snapshot(),
     failures: failures.map(compactFailure),
   };
