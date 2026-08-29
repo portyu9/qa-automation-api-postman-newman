@@ -30,7 +30,7 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: npm run validate
-      - name: Execute collection
+      - name: Execute collection against runner-owned local API
         run: npm test
       - name: Publish CI observability summary
         if: always()
@@ -44,7 +44,7 @@ jobs:
             schemaVersion: 1,
             framework: 'postman-newman',
             runId: process.env.TEST_RUN_ID,
-            dimension: { node: '22', execution: 'collection' },
+            dimension: { node: '22', execution: 'collection', target: 'local-fixture' },
             status: process.env.JOB_STATUS,
             sha: process.env.GITHUB_SHA,
             ref: process.env.GITHUB_REF,
@@ -56,6 +56,7 @@ jobs:
             echo
             echo "- Run ID: \`${TEST_RUN_ID}\`"
             echo "- Job status: \`${JOB_STATUS}\`"
+            echo '- Target: repository-owned `127.0.0.1:4010` API fixture'
             echo '- Evidence: JUnit + sanitized run manifest + CI observability envelope'
           } | tee reports/ci-summary.md >> "$GITHUB_STEP_SUMMARY"
       - name: Upload Newman reports
