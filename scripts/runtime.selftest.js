@@ -45,7 +45,7 @@ assert.throws(
 );
 
 assert.equal(
-  absoluteHttpBaseUrl('base_url', 'https://example.test/api/'),
+  absoluteHttpBaseUrl('base_url', '  HTTPS://EXAMPLE.TEST:443/api/  '),
   'https://example.test/api'
 );
 for (const value of [
@@ -55,6 +55,7 @@ for (const value of [
   'https://user:password@example.test',
   'https://example.test/api?access_token=secret',
   'https://example.test/api#fragment',
+  'https://example.test/api\nadmin',
 ]) {
   assert.throws(() => absoluteHttpBaseUrl('base_url', value), /base_url/);
 }
@@ -66,12 +67,28 @@ assert.equal(
   'https://example.test/posts'
 );
 assert.equal(sanitizeUrl('https://user:password@'), '<invalid-url>');
-assert.equal(
-  redactText(
-    'Authorization=Bearer abc123 https://example.test/posts?token=secret'
-  ).includes('abc123'),
-  false
+assert.equal(sanitizeUrl('about:blank'), 'about:blank');
+assert.equal(sanitizeUrl('file:///home/runner/private.json'), 'file:<redacted>');
+assert.equal(sanitizeUrl('data:text/plain,private-payload'), 'data:<redacted>');
+
+const redacted = redactText(
+  'Authorization=Bearer abc123 https://example.test/posts?token=secret ' +
+    'file:///home/runner/private.json ' +
+    'data:text/html,<h1>private-payload</h1> ' +
+    'javascript:throw new Error("dialog-secret")'
 );
+for (const secret of [
+  'abc123',
+  '?token=secret',
+  'private.json',
+  'private-payload',
+  'dialog-secret',
+]) {
+  assert.equal(redacted.includes(secret), false);
+}
+assert.equal(redacted.includes('file:<redacted>'), true);
+assert.equal(redacted.includes('data:<redacted>'), true);
+assert.equal(redacted.includes('javascript:<redacted>'), true);
 
 const failure = compactFailure({
   parent: { name: 'Read Posts' },
@@ -79,15 +96,16 @@ const failure = compactFailure({
   error: {
     name: 'AssertionError',
     message:
-      'password=secret at https://example.test/posts?access_token=secret',
+      'password=secret at https://example.test/posts?access_token=secret file:///home/runner/private.json',
   },
+  at: 'file:///home/runner/work/private-test.js:42:7',
 });
 assert.deepEqual(failure, {
   parent: 'Read Posts',
   source: 'GET /posts',
   error: 'AssertionError',
-  message: 'password=<redacted> at https://example.test/posts',
-  at: null,
+  message: 'password=<redacted> at https://example.test/posts file:<redacted>',
+  at: 'file:<redacted>',
 });
 
 console.log('newman runtime contract: ok');
