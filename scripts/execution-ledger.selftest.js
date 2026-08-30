@@ -33,21 +33,21 @@ ledger.record(
 assert.deepEqual(ledger.snapshot(), [
   {
     iteration: 3,
-    position: 7,
-    method: 'GET',
-    path: '/posts/42',
-    statusCode: 200,
-    responseTimeMs: 12.5,
-    transportError: null,
-  },
-  {
-    iteration: 3,
     position: 8,
     method: 'POST',
     path: '<invalid-url>',
     statusCode: null,
     responseTimeMs: null,
     transportError: 'TypeError',
+  },
+  {
+    iteration: 9,
+    position: 9,
+    method: 'DELETE',
+    path: '/ignored',
+    statusCode: null,
+    responseTimeMs: null,
+    transportError: null,
   },
 ]);
 
