@@ -106,23 +106,14 @@ flowchart LR
 
 ```text
 .
-├── collections/posts-api.postman_collection.json
-├── schemas/post-schema.json
-├── data/posts.json
-├── scripts/
-│   ├── run-newman.js
-│   ├── execution-ledger.js
-│   ├── runtime.js
-│   ├── runtime.selftest.js
-│   ├── validate-assets.js
-│   ├── local-api.js
-│   └── local-api.selftest.js
-├── docs/{ARCHITECTURE.md,TEST_STRATEGY.md}
-├── .github/workflows/{ci,docs,extended,security}.yml
-├── CONTRIBUTING.md
-├── postman_environment.json
-├── package.json
-└── package-lock.json
+├── .github/
+│   ├── scripts/
+│   └── workflows/
+├── collections/
+├── data/
+├── docs/
+├── schemas/
+└── scripts/
 ```
 
 ## Quick start
