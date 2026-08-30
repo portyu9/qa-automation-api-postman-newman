@@ -66,6 +66,15 @@ assert.equal(
   'https://example.test/posts'
 );
 assert.equal(sanitizeUrl('https://user:password@'), '<invalid-url>');
+assert.equal(sanitizeUrl('about:blank'), 'about:blank');
+assert.equal(sanitizeUrl('data:text/plain,private-payload'), 'data:<redacted>');
+assert.equal(sanitizeUrl('file:///tmp/private-report.json'), 'file:<redacted>');
+assert.equal(
+  redactText(
+    'Authorization=Bearer abc123 https://example.test/posts?token=secret data:text/plain,private-payload'
+  ).includes('private-payload'),
+  false
+);
 assert.equal(
   redactText(
     'Authorization=Bearer abc123 https://example.test/posts?token=secret'
@@ -79,14 +88,14 @@ const failure = compactFailure({
   error: {
     name: 'AssertionError',
     message:
-      'password=secret at https://example.test/posts?access_token=secret',
+      'password=secret at https://example.test/posts?access_token=secret data:text/plain,private-payload',
   },
 });
 assert.deepEqual(failure, {
   parent: 'Read Posts',
   source: 'GET /posts',
   error: 'AssertionError',
-  message: 'password=<redacted> at https://example.test/posts',
+  message: 'password=<redacted> at https://example.test/posts data:<redacted>',
   at: null,
 });
 
