@@ -23,7 +23,7 @@ flowchart LR
     STATE --> EXTERNAL
     RUN --> LEDGER[Bounded execution ledger]
     RUN --> J[JUnit]
-    RUN --> M[Sanitized manifest]
+    RUN --> M[Allowlisted manifest]
 ```
 
 The launcher must not become a second API test implementation. It configures Newman, owns deterministic process lifecycle, and records execution state; endpoint behavior remains in the collection.
@@ -36,11 +36,15 @@ This keeps CI execution inputs reviewable and prevents process-environment overr
 
 ## Target configuration and classification
 
-The selected Postman environment contains an enabled `base_url`. The committed default is `http://127.0.0.1:4010`. `NEWMAN_BASE_URL` can override that value without rewriting the environment file, but the resolved target always passes through `absoluteHttpBaseUrl()` before lifecycle or request side effects.
+The selected Postman environment must contain **exactly one enabled** `base_url`. Zero enabled entries are ambiguous/missing ownership; duplicate enabled entries make precedence ambiguous. Both conditions fail before Newman execution.
 
-The target must be absolute HTTP(S), include a hostname, and contain no user-info, query, or fragment.
+The committed default is `http://127.0.0.1:4010`. `NEWMAN_BASE_URL` can override the single enabled value without rewriting the environment file, but the resolved target always passes through `absoluteHttpBaseUrl()` before lifecycle or request side effects.
 
-`TEST_RUN_ID` is independently normalized through a bounded correlation-token contract: 1–128 ASCII letters, digits, dots, underscores, colons, or hyphens. Invalid operator input fails before Newman executes requests.
+The target must be absolute HTTP(S), include a hostname, reject explicit port `0`, and contain no user-info, query, or fragment.
+
+`TEST_RUN_ID` is independently normalized through a bounded correlation-token contract: 1–128 ASCII letters, digits, dots, underscores, colons, or hyphens. Invalid operator input fails before Newman executes requests. The environment may contain at most one enabled `run_id`; the runner updates it or adds one when absent, preventing duplicate enabled correlation identity.
+
+`NEWMAN_FOLDER`, when supplied, is a bounded label with no control characters. It is normalized before it is passed to Newman and redacted/bounded again before persistence.
 
 The runner classifies the effective target as:
 
@@ -98,7 +102,7 @@ Schema validation supplements semantic assertions. Shape alone cannot prove requ
 `npm run validate` combines three independent contracts:
 
 1. `validate-assets.js` — committed collection/environment integrity and secret-like value guards;
-2. `runtime.selftest.js` — path containment, timeout, target URL/hostname, correlation-token, and diagnostic-redaction policy;
+2. `runtime.selftest.js` — path containment, timeout, target URL/hostname/port, correlation-token, optional-label, and diagnostic-redaction policy;
 3. `local-api.selftest.js` — executable loopback API behavior and lifecycle.
 
 Node-side policy should fail before Newman sends collection requests.
@@ -110,7 +114,7 @@ Node-side policy should fail before Newman sends collection requests.
 ```text
 validate inputs
     ↓
-resolve target + run correlation
+resolve target + run correlation + focused selector
     ↓
 start local fixture if owned
     ↓
@@ -150,19 +154,21 @@ reports/
 └── run-manifest.json
 ```
 
-The run manifest contains an allowlisted set of fields:
+The run manifest is **constructed from explicit allowlists** rather than copying Newman's broad `summary.run` objects. It contains:
 
 - schema version and validated run ID;
-- relative input paths;
-- optional folder;
-- validated base URL;
-- target class;
+- repository-relative input paths;
+- optional bounded/redacted folder selector;
+- validated base URL and target class;
 - request timeout;
-- Newman stats/timings;
+- selected Newman counters for iterations/items/requests/tests/assertions (`total`, `pending`, `failed` only);
+- selected timings: normalized start/completion ISO timestamps, derived duration, response average/min/max/standard deviation;
 - bounded execution-ledger entries;
 - bounded/redacted failure identity.
 
-It is written to a temporary path and atomically renamed.
+Counter values must be non-negative integers or become `null`; timing metrics must be finite and non-negative or become `null`; invalid dates do not survive as raw third-party values. Newly introduced fields inside future Newman summaries are therefore discarded unless deliberately reviewed and added to this evidence contract.
+
+The manifest is written to a temporary path and atomically renamed.
 
 ## Why raw Newman JSON is not retained by default
 
@@ -172,7 +178,7 @@ JUnit integrates with CI test surfaces; the manifest contains operational attrib
 
 ## Diagnostic privacy
 
-`runtime.js` redacts URL user-info/query/fragment, bearer/basic credential values, common secret/token/password/API-key assignments, and oversized failure text.
+`runtime.js` redacts URL user-info/query/fragment, fails closed for malformed HTTP(S) diagnostic URLs, redacts bearer/basic credential values, common secret/token/password/API-key assignments, and oversized failure text.
 
 This applies to structured/log evidence. It does not make arbitrary request or response payloads safe to retain. Collection logging and test data must remain controlled.
 
@@ -212,12 +218,13 @@ Primary CI executes asset/runtime/fixture validation and then the collection aga
 New runner behavior should:
 
 1. validate every new filesystem input against the repository root;
-2. validate target/runtime/correlation policy before lifecycle or Newman side effects;
-3. keep request/assertion semantics in Postman assets;
-4. keep required target lifecycle deterministic and repository-owned;
-5. add zero-public-network tests for new fixture/runtime policy;
-6. construct evidence from an allowlist rather than serializing broad runtime objects;
-7. bound/redact retained text and event ledgers before persistence;
-8. preserve Newman, reporter, and lifecycle failure status;
-9. keep the Collection v2.1/Newman compatibility boundary explicit;
-10. classify explicit deployed-environment execution separately from required CI.
+2. validate target/runtime/correlation/selector policy before lifecycle or Newman side effects;
+3. reject ambiguous duplicate enabled environment identity values;
+4. keep request/assertion semantics in Postman assets;
+5. keep required target lifecycle deterministic and repository-owned;
+6. add zero-public-network tests for new fixture/runtime policy;
+7. construct evidence from explicit field allowlists rather than serializing broad runtime objects;
+8. normalize/bound/redact retained values before persistence;
+9. preserve Newman, reporter, and lifecycle failure status;
+10. keep the Collection v2.1/Newman compatibility boundary explicit;
+11. classify explicit deployed-environment execution separately from required CI.
