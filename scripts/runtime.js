@@ -6,7 +6,7 @@ const MAX_FAILURE_MESSAGE = 2_000;
 const MAX_LABEL = 500;
 const SAFE_CORRELATION_TOKEN = /^[A-Za-z0-9._:-]{1,128}$/;
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
-const URL_PATTERN = /https?:\/\/[^\s"'<>]+/gi;
+const URI_PATTERN = /\b(?:https?|wss?|data|file|javascript|blob|about):[^\s"'<>]+/gi;
 const AUTH_PATTERN = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi;
 const SECRET_ASSIGNMENT = /\b(access[_-]?token|token|password|passwd|secret|api[_-]?key|authorization)\b(\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;&}]+)/gi;
 
@@ -78,21 +78,25 @@ function absoluteHttpBaseUrl(name, value) {
 
 function sanitizeUrl(value) {
   const raw = String(value ?? '');
+  if (raw.toLowerCase() === 'about:blank') return 'about:blank';
+
   let parsed;
   try {
     parsed = new URL(raw);
   } catch {
-    return /^https?:/i.test(raw) ? '<invalid-url>' : raw;
+    return /^(?:https?|wss?):/i.test(raw) ? '<invalid-url>' : raw;
   }
 
-  if (!['http:', 'https:'].includes(parsed.protocol)) return raw;
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    return `${parsed.protocol}<redacted>`;
+  }
   const pathname = parsed.pathname === '/' ? '' : parsed.pathname;
   return `${parsed.origin}${pathname}`;
 }
 
 function redactText(value) {
   return String(value ?? '')
-    .replace(URL_PATTERN, (url) => sanitizeUrl(url))
+    .replace(URI_PATTERN, (url) => sanitizeUrl(url))
     .replace(AUTH_PATTERN, '$1 <redacted>')
     .replace(SECRET_ASSIGNMENT, '$1$2<redacted>');
 }
