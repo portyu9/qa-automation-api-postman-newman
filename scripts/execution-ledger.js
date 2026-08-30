@@ -10,8 +10,6 @@ class ExecutionLedger {
   }
 
   record(args, error) {
-    if (this.entries.length >= this.maxEntries) return;
-
     const rawUrl = args?.request?.url?.toString?.() || '';
     let path = '<invalid-url>';
     try {
@@ -22,7 +20,7 @@ class ExecutionLedger {
 
     const responseTime = Number(args?.response?.responseTime);
     const statusCode = Number(args?.response?.code);
-    this.entries.push({
+    const entry = {
       iteration: Number.isInteger(args?.cursor?.iteration) ? args.cursor.iteration : null,
       position: Number.isInteger(args?.cursor?.position) ? args.cursor.position : null,
       method: String(args?.request?.method || 'UNKNOWN').toUpperCase(),
@@ -30,7 +28,12 @@ class ExecutionLedger {
       statusCode: Number.isInteger(statusCode) ? statusCode : null,
       responseTimeMs: Number.isFinite(responseTime) && responseTime >= 0 ? responseTime : null,
       transportError: error ? String(error.name || 'request_error') : null,
-    });
+    };
+
+    if (this.entries.length === this.maxEntries) {
+      this.entries.shift();
+    }
+    this.entries.push(entry);
   }
 
   snapshot() {
