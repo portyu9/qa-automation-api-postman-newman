@@ -51,6 +51,7 @@ assert.equal(
 for (const value of [
   'localhost:3000',
   'https://:443',
+  'https://example.test:0/api',
   'https://user:password@example.test',
   'https://example.test/api?access_token=secret',
   'https://example.test/api#fragment',
@@ -64,6 +65,7 @@ assert.equal(
   ),
   'https://example.test/posts'
 );
+assert.equal(sanitizeUrl('https://user:password@'), '<invalid-url>');
 assert.equal(
   redactText(
     'Authorization=Bearer abc123 https://example.test/posts?token=secret'
