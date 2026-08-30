@@ -75,7 +75,7 @@ const redacted = redactText(
   'Authorization=Bearer abc123 https://example.test/posts?token=secret ' +
     'file:///home/runner/private.json ' +
     'data:text/html,<h1>private-payload</h1> ' +
-    'javascript:throw new Error("dialog-secret")'
+    'javascript:alert("dialog-secret")'
 );
 for (const secret of [
   'abc123',
