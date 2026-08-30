@@ -64,6 +64,9 @@ function absoluteHttpBaseUrl(name, value) {
   if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) {
     throw new Error(`${name} must use http or https with a hostname`);
   }
+  if (parsed.port === '0') {
+    throw new Error(`${name} port must be between 1 and 65535`);
+  }
   if (parsed.username || parsed.password) {
     throw new Error(`${name} must not contain URL credentials`);
   }
@@ -79,7 +82,7 @@ function sanitizeUrl(value) {
   try {
     parsed = new URL(raw);
   } catch {
-    return raw;
+    return /^https?:/i.test(raw) ? '<invalid-url>' : raw;
   }
 
   if (!['http:', 'https:'].includes(parsed.protocol)) return raw;
