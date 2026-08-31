@@ -31,7 +31,7 @@ A version-controlled API quality-engineering framework built around **Postman Co
 | Data-driven contract | Iteration precedence across read/write cases | Same local API | JUnit + manifest |
 | Execution ledger | Request ordering/method/path/status/timing/transport class | Newman request events | Bounded allowlisted records |
 | Explicit integration | Same collection against a reviewed deployment | Explicit HTTP(S) override | External target classification |
-| Security | Dependency/configuration exposure | Trivy filesystem scan | JSON + Markdown findings |
+| Security | Source/dependency/configuration exposure | CodeQL + Trivy + Dependency Review when available | SAST + repository scan + dependency-diff evidence |
 | Documentation | README/workflow/governance consistency | Repository-local validator | Actions status |
 
 ## Architecture
@@ -118,10 +118,10 @@ flowchart LR
 
 ## Quick start
 
-Node.js 22+ is required.
+CI qualifies Node.js 22 and 24 with npm 11.19.1. Other Node major lines are outside the declared support contract.
 
 ```bash
-npm ci
+npm ci --ignore-scripts
 npm run validate
 npm test
 ```
@@ -203,7 +203,7 @@ A launcher or fixture defect should therefore be reproducible without a public s
 
 ## Run manifest, execution ledger, and exit integrity
 
-The runner writes `reports/newman-junit.xml` and `reports/run-manifest.json`. The manifest contains allowlisted inputs, target class, timeout, stats/timings, sanitized executions, and bounded/redacted failures. It is written atomically.
+The runner writes `reports/newman-junit.xml` and `reports/run-manifest.json`. The manifest contains allowlisted inputs, target class, timeout, stats/timings, sanitized executions, and bounded/redacted failures. It is written atomically. Required CI independently rejects missing/empty JUnit, zero request/assertion counts, empty/mismatched execution-ledger evidence, transport errors, invalid HTTP status evidence, and manifest failures before artifacts are accepted.
 
 `ExecutionLedger` subscribes to Newman's `request` events and keeps a bounded record of:
 
@@ -214,7 +214,7 @@ The runner writes `reports/newman-junit.xml` and `reports/run-manifest.json`. Th
 - non-negative response time;
 - transport error class, not arbitrary error payload text.
 
-The ledger stops accepting entries after its configured maximum rather than allowing evidence volume to grow without bound. Snapshots copy retained entries so consumers do not receive the mutable internal array.
+The ledger is a bounded rolling window: when it reaches its configured maximum, the oldest observation is evicted before the newest one is retained. Snapshots copy retained entries so consumers do not receive the mutable internal array.
 
 Raw Newman JSON is intentionally not retained by default because broad runtime serialization can expose substantially more context than CI needs.
 
@@ -232,7 +232,7 @@ For an existing Newman-focused framework, v2.1 is therefore a compatibility cont
 
 Primary CI runs the default collection against the runner-owned fixture. Extended CI adds iteration-data breadth against the **same** deterministic fixture. The difference is coverage breadth, not target reliability.
 
-Security and docs workflows remain independent failure domains. Trivy findings are not collection flakiness.
+Security and docs workflows remain independent failure domains. CodeQL covers source-level security analysis; Trivy covers repository dependency/configuration/secret findings; pull requests use Dependency Review when GitHub Dependency graph is available and record an explicit fallback otherwise. These findings are not collection flakiness.
 
 ## Dependency maintenance
 
@@ -242,9 +242,9 @@ Dependabot maintains **npm** and **GitHub Actions**.
 - grouped minor/patch updates reduce routine PR noise;
 - major Newman/Node ecosystem upgrades remain standalone;
 - GitHub Actions are treated as executable dependencies;
-- dependency PRs must clear asset validation, runtime/fixture/ledger self-tests, Newman execution, security, and docs gates.
+- dependency PRs are evaluated by asset validation, runtime/fixture/ledger self-tests, Newman execution, security, and docs workflows.
 
-Dependabot, the committed lockfile, deterministic fixture tests, and Trivy address different supply-chain risks and should remain separate controls.
+Dependabot, npm 11.19.1, lifecycle-script-disabled locked installation, deterministic fixture tests, CodeQL, Trivy, and Dependency Review address different supply-chain risks and should remain separate controls.
 
 ## Failure triage
 
