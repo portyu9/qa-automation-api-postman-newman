@@ -10,32 +10,49 @@ permissions:
   contents: read
 
 concurrency:
-  group: postman-newman-${{ github.workflow }}-${{ github.ref }}
+  group: postman-newman-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
   TEST_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
   REQUEST_TIMEOUT_MS: "10000"
+  EXPECTED_TARGET_CLASS: local-fixture
 
 jobs:
   newman:
+    name: newman · Node ${{ matrix.label }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - node: "22.23.2"
+            label: "22"
+          - node: "24.20.0"
+            label: "24"
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: package-lock.json
-      - run: npm ci --no-audit --no-fund
-      - run: npm run validate
+      - name: Pin npm toolchain
+        run: npm install --global npm@11.19.1 --no-audit --no-fund
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate assets, runtime, fixture, and evidence policy
+        run: npm run validate
       - name: Execute collection against runner-owned local API
         run: npm test
+      - name: Validate meaningful Newman evidence
+        run: npm run evidence:check
       - name: Publish CI observability summary
         if: always()
         env:
           JOB_STATUS: ${{ job.status }}
+          NODE_LABEL: ${{ matrix.label }}
         run: |
           mkdir -p reports
           node - <<'NODE'
@@ -44,7 +61,7 @@ jobs:
             schemaVersion: 1,
             framework: 'postman-newman',
             runId: process.env.TEST_RUN_ID,
-            dimension: { node: '22', execution: 'collection', target: 'local-fixture' },
+            dimension: { node: process.env.NODE_LABEL, execution: 'collection', target: 'local-fixture' },
             status: process.env.JOB_STATUS,
             sha: process.env.GITHUB_SHA,
             ref: process.env.GITHUB_REF,
@@ -52,18 +69,18 @@ jobs:
           fs.writeFileSync('reports/ci-observability.json', `${JSON.stringify(payload, null, 2)}\n`);
           NODE
           {
-            echo '### Postman / Newman · collection gate'
+            echo "### Postman / Newman · Node ${NODE_LABEL}"
             echo
             echo "- Run ID: \`${TEST_RUN_ID}\`"
             echo "- Job status: \`${JOB_STATUS}\`"
             echo '- Target: repository-owned `127.0.0.1:4010` API fixture'
-            echo '- Evidence: JUnit + sanitized run manifest + CI observability envelope'
+            echo '- Evidence: JUnit + validated allowlisted run manifest + CI observability envelope'
           } | tee reports/ci-summary.md >> "$GITHUB_STEP_SUMMARY"
       - name: Upload Newman reports
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: newman-reports
+          name: newman-reports-node-${{ matrix.label }}-${{ github.run_id }}
           path: reports/
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 14

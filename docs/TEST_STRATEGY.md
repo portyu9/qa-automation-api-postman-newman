@@ -103,6 +103,8 @@ Default retained machine evidence is:
 - JUnit for CI test integration;
 - `run-manifest.json` for bounded operational context.
 
+Required CI independently validates that both outputs are present and non-empty, that the manifest represents non-zero request/assertion work, that its execution ledger matches request statistics, and that it contains no transport or manifest failures.
+
 The manifest is an **explicit allowlisted projection**, not a serialized copy of `summary.run`. It records input provenance, validated resolved target/target class, timeout, a bounded/redacted folder selector, selected stats/timings, compact failures, and a bounded execution ledger.
 
 Selected Newman stats retain only `total`, `pending`, and `failed` for iterations, items, requests, tests, and assertions. Selected timings retain normalized start/completion timestamps, derived duration, and finite non-negative response average/min/max/standard-deviation values. Invalid/negative/non-finite values normalize to `null`, and unknown fields in future Newman result objects are discarded unless deliberately added to the contract.
@@ -160,7 +162,7 @@ Committed environments contain only non-secret fixture/default values. Runtime c
 
 Avoid collection-level logging of full headers, bodies, cookies, or environment objects. The runner's redaction policy cannot reliably sanitize arbitrary logs emitted by collection scripts.
 
-Repository security scanning independently checks vulnerability, misconfiguration, and committed-secret findings.
+Repository security remains an independent failure domain: CodeQL performs source analysis, Trivy checks dependency/misconfiguration/committed-secret findings, and pull-request Dependency Review runs when GitHub Dependency graph is available.
 
 ## Parallelism and isolation
 
@@ -183,7 +185,7 @@ A collection/framework change is ready when:
 - the execution ledger remains bounded and payload-safe;
 - retained stats/timings come from explicit numeric/date allowlists rather than broad Newman objects;
 - lifecycle and Newman failures preserve nonzero status;
-- retained evidence remains bounded/privacy-aware;
+- retained evidence remains bounded/privacy-aware and passes the independent meaningful-evidence gate;
 - the Newman/Collection-v2.1 compatibility boundary remains explicit;
 - external target behavior remains explicitly classified;
 - changed runner/fixture/reporting policy is reflected in documentation and CI.
