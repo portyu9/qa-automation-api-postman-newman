@@ -18,6 +18,11 @@ env:
   TEST_RUN_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
   REQUEST_TIMEOUT_MS: "10000"
   EXPECTED_TARGET_CLASS: local-fixture
+  EXPECTED_NEWMAN_COLLECTION: collections/posts-api.postman_collection.json
+  EXPECTED_NEWMAN_ENVIRONMENT: postman_environment.json
+  EXPECTED_NEWMAN_ITERATION_DATA: "<none>"
+  EXPECTED_NEWMAN_FOLDER: "<none>"
+  EXPECTED_EXECUTION_PROFILE: posts-full
   MIN_NEWMAN_ITERATIONS: "1"
   MIN_NEWMAN_REQUESTS: "5"
   MIN_NEWMAN_ASSERTIONS: "19"
@@ -42,18 +47,20 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: package-lock.json
+      - name: Validate immutable workflow dependencies
+        run: python3 .github/scripts/validate_workflow_pins.py
       - name: Pin and verify npm toolchain
         run: |
           npm install --global --ignore-scripts "npm@${NPM_VERSION}" --no-audit --no-fund
           test "$(npm --version)" = "$NPM_VERSION"
-          node --version
+          test "$(node --version)" = "v${{ matrix.node }}"
       - name: Install locked dependencies without lifecycle scripts
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Validate assets, runtime, fixture, and evidence policy
         run: npm run validate
       - name: Execute collection against runner-owned local API
         run: npm test
-      - name: Validate semantic Newman evidence
+      - name: Validate governed semantic Newman evidence
         run: npm run evidence:check
       - name: Publish CI observability summary
         if: always()
@@ -85,6 +92,7 @@ jobs:
             echo "- Runtime: \`Node ${NODE_VERSION}\` + \`npm ${NPM_VERSION}\`"
             echo '- Target: repository-owned `127.0.0.1:4010` API fixture'
             echo '- Evidence floor: `>=1` iteration, `>=5` requests, `>=19` assertions, zero pending/failed work, reconciled ledger/JUnit'
+            echo '- Identity contract: governed collection/environment, no iteration file/folder override, exact five-request local execution topology'
             echo '- Evidence: JUnit + validated allowlisted run manifest + CI observability envelope'
           } | tee reports/ci-summary.md >> "$GITHUB_STEP_SUMMARY"
       - name: Upload Newman reports

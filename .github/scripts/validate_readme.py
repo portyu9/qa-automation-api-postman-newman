@@ -63,6 +63,35 @@ def validate_repository_map(text: str, errors: list[str]) -> None:
             fail(f"README repository map must contain directories only; found non-directory entry: {entry}", errors)
     if entries == 0: fail("README repository map is empty", errors)
 
+def validate_unfiltered_pull_request(workflow_name: str, errors: list[str]) -> None:
+    workflow = ROOT / ".github" / "workflows" / workflow_name
+    lines = workflow.read_text(encoding="utf-8").splitlines()
+    try:
+        index = lines.index("  pull_request:")
+    except ValueError:
+        fail(f"{workflow_name} must emit its aggregate gate on every pull request", errors)
+        return
+    for line in lines[index + 1:]:
+        if line and not line.startswith(" "):
+            break
+        if re.match(r"^  [A-Za-z0-9_-]+:\s*$", line):
+            break
+        if re.match(r"^\s{4}(?:paths|paths-ignore):", line):
+            fail(f"{workflow_name} pull_request trigger must not be path-filtered", errors)
+            break
+
+def validate_security_configuration(errors: list[str]) -> None:
+    config = ROOT / "trivy.yaml"
+    if not config.is_file():
+        fail("trivy.yaml is required to make npm dev-dependency coverage explicit", errors)
+        return
+    config_text = config.read_text(encoding="utf-8")
+    if not re.search(r"(?m)^pkg:\s*$", config_text) or not re.search(r"(?m)^\s{2}include-dev-deps:\s*true\s*$", config_text):
+        fail("trivy.yaml must enable pkg.include-dev-deps", errors)
+    security = (ROOT / ".github" / "workflows" / "security.yml").read_text(encoding="utf-8")
+    for required in ("trivy-config: trivy.yaml", "list-all-pkgs: true", "npm audit --audit-level=high --json"):
+        if required not in security: fail(f"security workflow is missing required dependency evidence contract: {required}", errors)
+
 def validate_toolchain_and_gates(text: str, errors: list[str]) -> None:
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     npm_version = package.get("packageManager", "").removeprefix("npm@")
@@ -74,6 +103,9 @@ def validate_toolchain_and_gates(text: str, errors: list[str]) -> None:
     for gate in ("ci-gate", "extended-gate", "security-gate"):
         if f"name: {gate}" not in workflow_text:
             fail(f"stable aggregate status is missing from workflows: {gate}", errors)
+    for workflow_name in ("ci.yml", "extended.yml", "security.yml"):
+        validate_unfiltered_pull_request(workflow_name, errors)
+    validate_security_configuration(errors)
 
 def main() -> int:
     errors: list[str] = []
