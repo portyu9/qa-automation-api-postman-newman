@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  readme-contract:
+  docs-contract:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -25,3 +25,5 @@ jobs:
           python-version: '3.13'
       - name: Validate README contracts
         run: python .github/scripts/validate_readme.py
+      - name: Validate immutable workflow dependencies
+        run: python .github/scripts/validate_workflow_pins.py
