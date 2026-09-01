@@ -4,16 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    paths:
-      - "collections/**"
-      - "schemas/**"
-      - "data/**"
-      - "scripts/**"
-      - "postman_environment.json"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/scripts/**"
-      - ".github/workflows/extended.yml"
   schedule:
     - cron: "11 8 * * 3"
   workflow_dispatch:
@@ -37,6 +27,11 @@ jobs:
       REQUEST_TIMEOUT_MS: "3000"
       NEWMAN_ITERATION_DATA: data/posts.json
       EXPECTED_TARGET_CLASS: local-fixture
+      EXPECTED_NEWMAN_COLLECTION: collections/posts-api.postman_collection.json
+      EXPECTED_NEWMAN_ENVIRONMENT: postman_environment.json
+      EXPECTED_NEWMAN_ITERATION_DATA: data/posts.json
+      EXPECTED_NEWMAN_FOLDER: "<none>"
+      EXPECTED_EXECUTION_PROFILE: posts-full
       MIN_NEWMAN_ITERATIONS: "3"
       MIN_NEWMAN_REQUESTS: "15"
       MIN_NEWMAN_ASSERTIONS: "57"
@@ -47,6 +42,8 @@ jobs:
           node-version: "24.20.0"
           cache: npm
           cache-dependency-path: package-lock.json
+      - name: Validate immutable workflow dependencies
+        run: python3 .github/scripts/validate_workflow_pins.py
       - name: Pin and verify npm toolchain
         run: |
           npm install --global --ignore-scripts "npm@${NPM_VERSION}" --no-audit --no-fund
@@ -58,7 +55,7 @@ jobs:
         run: npm run validate
       - name: Execute full data-driven collection against runner-owned local API
         run: npm test
-      - name: Validate semantic data-driven Newman evidence
+      - name: Validate governed data-driven Newman evidence
         run: npm run evidence:check
       - name: Publish API observability summary
         if: always()
@@ -88,6 +85,7 @@ jobs:
             echo '- Target: repository-owned `127.0.0.1:4010` API fixture'
             echo '- Dataset: `data/posts.json`'
             echo '- Evidence floor: `>=3` iterations, `>=15` requests, `>=57` assertions, zero pending/failed work, reconciled ledger/JUnit'
+            echo '- Identity contract: governed collection/environment/data inputs and exact five-request topology for each data row'
             echo "- Job status: \`${JOB_STATUS}\`"
             echo '- Evidence: JUnit + validated allowlisted run manifest + observability envelope'
           } | tee reports/extended-summary.md >> "$GITHUB_STEP_SUMMARY"
