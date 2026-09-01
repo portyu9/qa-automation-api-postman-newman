@@ -12,6 +12,7 @@ on:
       - "postman_environment.json"
       - "package.json"
       - "package-lock.json"
+      - ".github/scripts/**"
       - ".github/workflows/extended.yml"
   schedule:
     - cron: "11 8 * * 3"
@@ -24,6 +25,9 @@ concurrency:
   group: newman-extended-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  NPM_VERSION: "11.19.1"
+
 jobs:
   local-data-contract:
     runs-on: ubuntu-24.04
@@ -33,6 +37,9 @@ jobs:
       REQUEST_TIMEOUT_MS: "3000"
       NEWMAN_ITERATION_DATA: data/posts.json
       EXPECTED_TARGET_CLASS: local-fixture
+      MIN_NEWMAN_ITERATIONS: "3"
+      MIN_NEWMAN_REQUESTS: "15"
+      MIN_NEWMAN_ASSERTIONS: "57"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -40,18 +47,39 @@ jobs:
           node-version: "24.20.0"
           cache: npm
           cache-dependency-path: package-lock.json
-      - name: Pin npm toolchain
-        run: npm install --global npm@11.19.1 --no-audit --no-fund
+      - name: Pin and verify npm toolchain
+        run: |
+          npm install --global --ignore-scripts "npm@${NPM_VERSION}" --no-audit --no-fund
+          test "$(npm --version)" = "$NPM_VERSION"
+          test "$(node --version)" = "v24.20.0"
       - name: Install locked dependencies without lifecycle scripts
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm run validate
+      - name: Validate assets, runtime, fixture, and evidence policy
+        run: npm run validate
       - name: Execute full data-driven collection against runner-owned local API
         run: npm test
-      - name: Validate meaningful data-driven Newman evidence
+      - name: Validate semantic data-driven Newman evidence
         run: npm run evidence:check
       - name: Publish API observability summary
         if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
         run: |
+          mkdir -p reports
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const payload = {
+            schemaVersion: 1,
+            framework: 'postman-newman',
+            runId: process.env.TEST_RUN_ID,
+            dimension: { node: '24.20.0', execution: 'data-driven', target: 'local-fixture', dataset: 'data/posts.json' },
+            qualityFloor: { iterations: 3, requests: 15, assertions: 57 },
+            status: process.env.JOB_STATUS,
+            sha: process.env.GITHUB_SHA,
+            ref: process.env.GITHUB_REF,
+          };
+          fs.writeFileSync('reports/extended-observability.json', `${JSON.stringify(payload, null, 2)}\n`);
+          NODE
           {
             echo '### Newman · deterministic data-driven contract'
             echo
@@ -59,8 +87,9 @@ jobs:
             echo '- Runtime: `Node 24.20.0` + `npm 11.19.1`'
             echo '- Target: repository-owned `127.0.0.1:4010` API fixture'
             echo '- Dataset: `data/posts.json`'
-            echo "- Job status: \`${{ job.status }}\`"
-            echo '- Evidence: JUnit + validated allowlisted run manifest'
+            echo '- Evidence floor: `>=3` iterations, `>=15` requests, `>=57` assertions, zero pending/failed work, reconciled ledger/JUnit'
+            echo "- Job status: \`${JOB_STATUS}\`"
+            echo '- Evidence: JUnit + validated allowlisted run manifest + observability envelope'
           } | tee reports/extended-summary.md >> "$GITHUB_STEP_SUMMARY"
       - name: Upload extended evidence
         if: always()
@@ -70,3 +99,20 @@ jobs:
           path: reports/
           if-no-files-found: error
           retention-days: 14
+
+  extended-gate:
+    name: extended-gate
+    if: always()
+    needs: [local-data-contract]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Evaluate data-driven contract
+        env:
+          DATA_RESULT: ${{ needs.local-data-contract.result }}
+        run: |
+          if [[ "$DATA_RESULT" != "success" ]]; then
+            echo "data-driven Newman contract did not succeed: $DATA_RESULT" >&2
+            exit 1
+          fi
+          echo 'Data-driven Newman contract succeeded.'
