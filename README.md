@@ -14,7 +14,7 @@
 [![License](https://img.shields.io/badge/License-MIT-2EA44F?logo=opensourceinitiative&logoColor=white)](LICENSE)
 [![Security Policy](https://img.shields.io/badge/Security-Policy-24292F?logo=github&logoColor=white)](.github/SECURITY.md)
 
-A version-controlled API quality-engineering framework built around **Postman Collection v2.1** and the **Newman** execution engine. Postman assets own request/assertion semantics; the Node runner owns input provenance, deterministic target lifecycle, schema injection, timeout policy, correlation, bounded request-event evidence, and process-exit integrity.
+A version-controlled API quality-engineering framework built around **the Newman-supported Postman Collection format** and the **Newman** execution engine. Postman assets own request/assertion semantics; the Node runner owns input provenance, deterministic target lifecycle, schema injection, timeout policy, correlation, bounded request-event evidence, and process-exit integrity.
 
 > [!IMPORTANT]
 > Required execution is repository-owned. The committed environment points to `http://127.0.0.1:4010`, and the runner starts/stops that protocol fixture itself. A deployed API is an explicit `NEWMAN_BASE_URL` integration choice—not a dependency of the framework's health.
@@ -71,7 +71,7 @@ flowchart LR
 | --- | --- |
 | Collection ownership | Request definitions/assertions stay in Postman assets, not duplicated in Node. |
 | Collection identity | `collections/posts-api.postman_collection.json` is provider-neutral and describes the behavior under test. |
-| Collection format | v2.1 JSON is deliberate because Newman executes v2.1 collections; format/runtime migration is an explicit toolchain change. |
+| Collection format | the Newman-supported JSON format is deliberate because Newman executes the Newman-supported format collections; format/runtime migration is an explicit toolchain change. |
 | Default target | Committed `base_url` is `http://127.0.0.1:4010`. |
 | Target lifecycle | Runner starts/stops the local API only for the deterministic default. |
 | Local state | The fixture owns isolated in-memory created resources for the run and exposes deterministic create→read semantics. |
@@ -118,7 +118,7 @@ flowchart LR
 
 ## Quick start
 
-CI qualifies Node.js 22 and 24 with npm 11.19.1. Other Node major lines are outside the declared support contract.
+CI qualifies supported Node.js runtimes with npm. Other Node major lines are outside the declared support contract.
 
 ```bash
 npm ci --ignore-scripts
@@ -222,11 +222,11 @@ Evidence generation never converts a failing execution to success. Validation, f
 
 ## Newman and collection-format compatibility
 
-This repository intentionally remains a **Newman** framework, so its committed collection uses Postman Collection **v2.1 JSON**.
+This repository intentionally remains a **Newman** framework, so its committed collection uses Postman Collection **the Newman-supported JSON format**.
 
-Postman v12 introduced Collection v3 for Native Git workflows, and Newman does not execute v3 collections. Postman recommends its Postman CLI for v3/new Native Git workflows. Treat any future migration as an explicit runtime/format/CI decision: migrate the collection, reproduce the existing deterministic target/evidence/exit contracts, and validate behavior before retiring Newman. Do not silently convert the collection format while keeping a Newman runner that cannot execute it.
+Postman introduced a newer collection format for Native Git workflows, and Newman does not execute a newer collection format collections. Postman recommends its Postman CLI for a newer collection format/new Native Git workflows. Treat any future migration as an explicit runtime/format/CI decision: migrate the collection, reproduce the existing deterministic target/evidence/exit contracts, and validate behavior before retiring Newman. Do not silently convert the collection format while keeping a Newman runner that cannot execute it.
 
-For an existing Newman-focused framework, v2.1 is therefore a compatibility contract, not technical debt by itself.
+For an existing Newman-focused framework, the Newman-supported format is therefore a compatibility contract, not technical debt by itself.
 
 ## CI and security
 
@@ -244,7 +244,7 @@ Dependabot maintains **npm** and **GitHub Actions**.
 - GitHub Actions are treated as executable dependencies;
 - dependency PRs are evaluated by asset validation, runtime/fixture/ledger self-tests, Newman execution, security, and docs workflows.
 
-Dependabot, npm 11.19.1, lifecycle-script-disabled locked installation, deterministic fixture tests, CodeQL, Trivy, and Dependency Review address different supply-chain risks and should remain separate controls.
+Dependabot, npm, lifecycle-script-disabled locked installation, deterministic fixture tests, CodeQL, Trivy, and Dependency Review address different supply-chain risks and should remain separate controls.
 
 ## Failure triage
 
@@ -267,7 +267,7 @@ Dependabot, npm 11.19.1, lifecycle-script-disabled locked installation, determin
 
 - required CI against a public API;
 - provider-specific names for provider-neutral local contracts;
-- converting to Collection v3 while retaining a Newman runner;
+- converting to a newer collection format while retaining a Newman runner;
 - duplicated assertions in Node and Postman;
 - repository path overrides that escape the project root;
 - raw runtime evidence retained without a data-minimization reason;

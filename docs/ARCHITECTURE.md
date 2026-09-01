@@ -2,7 +2,7 @@
 
 ## Design objective
 
-The framework keeps Postman Collection v2.1 assets portable while the Node launcher supplies execution governance. Collection scripts own request and assertion semantics; Node code owns input provenance, target validation, deterministic local-target lifecycle, schema injection, timeout/correlation policy, bounded execution evidence, and process-exit integrity.
+The framework keeps the Newman-supported Postman Collection format assets portable while the Node launcher supplies execution governance. Collection scripts own request and assertion semantics; Node code owns input provenance, target validation, deterministic local-target lifecycle, schema injection, timeout/correlation policy, bounded execution evidence, and process-exit integrity.
 
 ```mermaid
 flowchart LR
@@ -13,7 +13,7 @@ flowchart LR
     RUN --> ENV[Postman environment]
     RUN --> DATA[Optional iteration data]
     RUN --> SCHEMA[Versioned schema]
-    RUN --> COL[Collection v2.1]
+    RUN --> COL[the Newman-supported collection format]
     ENV --> TARGET{Validated base_url}
     TARGET -->|default| LOCAL[Runner-owned local API]
     TARGET -->|override| EXTERNAL[Explicit deployed API]
@@ -184,9 +184,9 @@ This applies to structured/log evidence. It does not make arbitrary request or r
 
 ## Collection-format and runtime compatibility
 
-This repository intentionally targets **Postman Collection v2.1 executed by Newman**. That is an explicit runtime contract, not an accidental old file format.
+This repository intentionally targets **the Newman-supported Postman Collection format executed by Newman**. That is an explicit runtime contract, not an accidental old file format.
 
-Newman does not provide the Postman Collection v3 execution path used by newer Postman platform workflows. If a requirement needs Collection v3 or newer Postman-native Git/CLI behavior, migration means changing the execution engine to Postman CLI, updating asset format and CI semantics, and revalidating evidence/privacy contracts. It should not be performed as a casual JSON-version edit while retaining Newman.
+Newman does not provide the Postman a newer collection format execution path used by newer Postman platform workflows. If a requirement needs a newer collection format or newer Postman-native Git/CLI behavior, migration means changing the execution engine to Postman CLI, updating asset format and CI semantics, and revalidating evidence/privacy contracts. It should not be performed as a casual JSON-version edit while retaining Newman.
 
 ## Primary and extended gates
 
@@ -226,5 +226,5 @@ New runner behavior should:
 7. construct evidence from explicit field allowlists rather than serializing broad runtime objects;
 8. normalize/bound/redact retained values before persistence;
 9. preserve Newman, reporter, and lifecycle failure status;
-10. keep the Collection v2.1/Newman compatibility boundary explicit;
+10. keep the the Newman-supported collection format/Newman compatibility boundary explicit;
 11. classify explicit deployed-environment execution separately from required CI.

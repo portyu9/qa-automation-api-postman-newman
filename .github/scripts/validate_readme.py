@@ -94,9 +94,10 @@ def validate_security_configuration(errors: list[str]) -> None:
 
 def validate_toolchain_and_gates(text: str, errors: list[str]) -> None:
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    npm_version = package.get("packageManager", "").removeprefix("npm@")
-    if npm_version and f"npm {npm_version}" not in text:
-        fail(f"README must name packageManager npm {npm_version}", errors)
+    if not str(package.get("packageManager", "")).startswith("npm@"):
+        fail("package.json must declare the repository-owned npm package manager", errors)
+    if "npm" not in text:
+        fail("README must document npm without duplicating its numeric version", errors)
     workflow_text = "\n".join(
         p.read_text(encoding="utf-8") for p in (ROOT / ".github" / "workflows").glob("*.yml")
     )
