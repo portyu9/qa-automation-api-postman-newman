@@ -234,6 +234,23 @@ Primary CI runs the default collection against the runner-owned fixture. Extende
 
 Security and docs workflows remain independent failure domains. CodeQL covers source-level security analysis; Trivy covers repository dependency/configuration/secret findings; pull requests use Dependency Review when GitHub Dependency graph is available and record an explicit fallback otherwise. These findings are not collection flakiness.
 
+## Confidence boundaries
+
+The repository separates **collection behavior**, **runner policy**, **target ownership**, and **retained evidence** so a successful Newman process is not overstated as universal API correctness.
+
+| Signal | Confidence gained | Deliberate limit |
+| --- | --- | --- |
+| Postman collection assertions | Request construction, variable resolution at the collection layer, response semantics, and stateful create/read behavior are executable through the native collection model | Collection assertions do not prove runner preflight, process control, artifact integrity, or deployed infrastructure |
+| Newman runner policy | Environment precedence, bounded execution, timeout/process handling, correlation, and reporter/evidence behavior are governed outside the collection | Runner correctness does not make an incorrect collection assertion meaningful |
+| Repository-owned HTTP fixture | Required CI exercises real local HTTP serialization without public DNS, third-party uptime, rate limits, or mutable content | It does not prove deployed TLS, ingress, identity, production data, or external-service dependencies |
+| Data-driven cases | The represented input partitions remain executable through one governed request/assertion path | A data file is not proof of exhaustive domain coverage; partitions still require risk-based design |
+| Preflight validation | Missing/unsafe inputs, malformed assets, and invalid target policy fail before network execution | Preflight proves configuration admissibility, not target availability or business correctness |
+| JUnit + sanitized execution manifest | CI can reconcile process outcome, executed items, target attribution, and bounded evidence without relying on file presence alone | Reporter output is secondary evidence; native Newman exit status and semantic validation remain authoritative |
+| Explicit deployed target | The same governed runner can exercise an approved environment without redefining deterministic repository health | An environment run mixes service, network, identity, and data risks and must be interpreted separately |
+| CodeQL / npm Audit / Trivy / dependency review | Independent controls inspect source, advisory, repository, configuration/secret, and change-diff surfaces | Green scanners are scoped evidence rather than proof of vulnerability absence |
+
+Keep assertions where their semantics naturally belong: collection-level protocol/business checks stay visible in Postman, while orchestration, target authorization, process lifecycle, and evidence integrity stay in the runner. Avoid duplicating the same policy in both places.
+
 ## Dependency maintenance
 
 Dependabot maintains **npm** and **GitHub Actions**.
