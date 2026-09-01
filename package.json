@@ -16,5 +16,12 @@
   "devDependencies": {
     "newman": "6.2.2"
   },
+  "overrides": {
+    "flatted": "3.4.4",
+    "handlebars": "4.7.9",
+    "lodash": "4.18.1",
+    "node-forge": "1.4.0",
+    "underscore": "1.13.8"
+  },
   "packageManager": "npm@11.19.1"
 }
