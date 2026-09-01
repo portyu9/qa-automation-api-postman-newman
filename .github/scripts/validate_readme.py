@@ -1,4 +1,4 @@
-"""Validate repository README contracts without third-party dependencies."""
+"""Validate repository README and workflow contracts without third-party dependencies."""
 from __future__ import annotations
 import json
 import re
@@ -68,11 +68,12 @@ def validate_toolchain_and_gates(text: str, errors: list[str]) -> None:
     npm_version = package.get("packageManager", "").removeprefix("npm@")
     if npm_version and f"npm {npm_version}" not in text:
         fail(f"README must name packageManager npm {npm_version}", errors)
+    workflow_text = "\n".join(
+        p.read_text(encoding="utf-8") for p in (ROOT / ".github" / "workflows").glob("*.yml")
+    )
     for gate in ("ci-gate", "extended-gate", "security-gate"):
-        if gate not in text:
-            fail(f"README must name stable aggregate status `{gate}`", errors)
-        if not any(gate in p.read_text(encoding="utf-8") for p in (ROOT / ".github" / "workflows").glob("*.yml")):
-            fail(f"documented aggregate status does not exist in workflows: {gate}", errors)
+        if f"name: {gate}" not in workflow_text:
+            fail(f"stable aggregate status is missing from workflows: {gate}", errors)
 
 def main() -> int:
     errors: list[str] = []
