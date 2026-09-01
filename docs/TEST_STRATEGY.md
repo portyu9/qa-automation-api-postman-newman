@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The suite uses Postman Collection v2.1 executed by Newman to verify API behavior while keeping execution governance and the default target independently testable in Node. Required collection execution is repository-controlled; deployed environments remain explicit integration targets.
+The suite uses the Newman-supported Postman Collection format executed by Newman to verify API behavior while keeping execution governance and the default target independently testable in Node. Required collection execution is repository-controlled; deployed environments remain explicit integration targets.
 
 ## Gate layers
 
@@ -117,9 +117,9 @@ Failure text is bounded and common credential/token forms are redacted. Malforme
 
 ## Collection format and execution engine
 
-Newman is the selected execution engine, so committed collections remain Postman Collection **v2.1**.
+Newman is the selected execution engine, so committed collections remain Postman Collection **the Newman-supported format**.
 
-A requirement for Postman Collection v3 or newer Postman-native Git/CLI behavior is a migration decision: adopt Postman CLI, update collection format and CI commands, then revalidate lifecycle, evidence, exit semantics, and privacy. Do not change only the JSON schema version while claiming unchanged Newman compatibility.
+A requirement for Postman a newer collection format or newer Postman-native Git/CLI behavior is a migration decision: adopt Postman CLI, update collection format and CI commands, then revalidate lifecycle, evidence, exit semantics, and privacy. Do not change only the JSON schema version while claiming unchanged Newman compatibility.
 
 ## Exit integrity
 
@@ -186,6 +186,6 @@ A collection/framework change is ready when:
 - retained stats/timings come from explicit numeric/date allowlists rather than broad Newman objects;
 - lifecycle and Newman failures preserve nonzero status;
 - retained evidence remains bounded/privacy-aware and passes the independent meaningful-evidence gate;
-- the Newman/Collection-v2.1 compatibility boundary remains explicit;
+- the Newman/Collection-the Newman-supported format compatibility boundary remains explicit;
 - external target behavior remains explicitly classified;
 - changed runner/fixture/reporting policy is reflected in documentation and CI.
