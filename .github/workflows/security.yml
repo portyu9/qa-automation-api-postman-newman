@@ -32,6 +32,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate immutable workflow dependencies
+        run: python3 .github/scripts/validate_workflow_pins.py
       - name: Initialize CodeQL
         uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
@@ -53,6 +55,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: package-lock.json
+      - name: Validate immutable workflow dependencies
+        run: python3 .github/scripts/validate_workflow_pins.py
       - name: Pin and verify npm toolchain
         run: |
           npm install --global --ignore-scripts "npm@${NPM_VERSION}" --no-audit --no-fund
@@ -72,13 +76,21 @@ jobs:
           node - <<'NODE'
           const fs = require('node:fs');
           const report = JSON.parse(fs.readFileSync('reports/security/npm-audit.json', 'utf8'));
-          if (!report.metadata || !report.metadata.vulnerabilities) {
-            throw new Error('npm audit JSON is missing vulnerability metadata');
+          if (!report.metadata || !report.metadata.vulnerabilities || !report.metadata.dependencies) {
+            throw new Error('npm audit JSON is missing vulnerability/dependency metadata');
           }
           const v = report.metadata.vulnerabilities;
+          const dependencies = report.metadata.dependencies;
+          if (!Number.isInteger(dependencies.total) || dependencies.total < 10) {
+            throw new Error(`npm audit dependency graph is unexpectedly small: ${dependencies.total}`);
+          }
+          if ((v.high ?? 0) !== 0 || (v.critical ?? 0) !== 0) {
+            throw new Error(`npm audit reports gated advisories: high=${v.high}, critical=${v.critical}`);
+          }
           const summary = [
             '### npm advisory gate',
             '',
+            `- Audited dependency graph: \`${dependencies.total}\` packages`,
             `- HIGH: \`${v.high ?? 'unknown'}\``,
             `- CRITICAL: \`${v.critical ?? 'unknown'}\``,
             '- Policy: HIGH/CRITICAL advisories are build-breaking; JSON evidence is retained.',
@@ -103,21 +115,25 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate immutable workflow dependencies
+        run: python3 .github/scripts/validate_workflow_pins.py
       - name: Prepare evidence directory
         run: mkdir -p reports/security
-      - name: Scan dependencies, configuration, and repository secrets
+      - name: Scan npm dev dependencies, configuration, and repository secrets
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: v0.74.0
           scan-type: fs
           scan-ref: .
+          trivy-config: trivy.yaml
           scanners: vuln,misconfig,secret
           severity: HIGH,CRITICAL
           ignore-unfixed: true
+          list-all-pkgs: true
           format: json
           output: reports/security/trivy.json
           exit-code: "1"
-      - name: Publish repository security summary
+      - name: Require attributed repository security evidence
         if: always()
         shell: bash
         run: |
@@ -128,6 +144,23 @@ jobs:
             printf '### Repository security gate\n\nTrivy did not produce the required JSON report.\n' | tee "$summary" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
+          jq -e '(.SchemaVersion == 2) and (.Trivy.Version == "0.74.0")' "$report" >/dev/null
+          npm_results=$(jq '[.Results[]? | select(.Class == "lang-pkgs" and .Type == "npm" and (.Target | endswith("package-lock.json")))] | length' "$report")
+          [[ "$npm_results" -ge 1 ]] || { echo 'Trivy JSON does not attribute an npm package-lock result' >&2; exit 1; }
+          package_count=$(jq '[.Results[]? | select(.Class == "lang-pkgs" and .Type == "npm" and (.Target | endswith("package-lock.json"))) | .Packages[]?] | length' "$report")
+          [[ "$package_count" -ge 10 ]] || { echo "Trivy npm package graph is unexpectedly small: $package_count" >&2; exit 1; }
+          for package_name in newman flatted handlebars lodash node-forge underscore; do
+            jq -e --arg package_name "$package_name" '
+              [.Results[]?
+                | select(.Class == "lang-pkgs" and .Type == "npm" and (.Target | endswith("package-lock.json")))
+                | .Packages[]?
+                | select(.Name == $package_name)]
+              | length > 0
+            ' "$report" >/dev/null || {
+              echo "Trivy npm evidence is missing governed package: $package_name" >&2
+              exit 1
+            }
+          done
           vulnerabilities=$(jq '[.Results[]? | .Vulnerabilities[]?] | length' "$report")
           misconfigurations=$(jq '[.Results[]? | .Misconfigurations[]?] | length' "$report")
           secrets=$(jq '[.Results[]? | .Secrets[]?] | length' "$report")
@@ -136,13 +169,15 @@ jobs:
             echo
             echo '| Signal | Findings |'
             echo '| --- | ---: |'
+            echo "| Attributed npm lock packages | ${package_count} |"
             echo "| Fixed HIGH/CRITICAL vulnerabilities | ${vulnerabilities} |"
             echo "| HIGH/CRITICAL misconfigurations | ${misconfigurations} |"
             echo "| Gated secret findings | ${secrets} |"
             echo
             echo '- Scanner: Trivy v0.74.0'
-            echo '- Scope: repository filesystem, dependency manifests/locks, supported configuration files, and committed secret material'
-            echo '- Missing JSON evidence is itself a gate failure.'
+            echo '- npm dev dependencies are explicitly included through the committed Trivy configuration.'
+            echo '- The package-lock evidence must include Newman plus the governed transitive override packages.'
+            echo '- Missing or unattributed JSON evidence is itself a gate failure.'
           } | tee "$summary" >> "$GITHUB_STEP_SUMMARY"
       - name: Upload repository security evidence
         if: always()
@@ -178,12 +213,12 @@ jobs:
             echo 'GitHub Dependency graph is available; running change-aware Dependency Review.'
           else
             echo 'available=false' >> "$GITHUB_OUTPUT"
-            echo '::warning::GitHub Dependency graph is unavailable; npm Audit and repository Trivy remain independent whole-repository gates, but change-aware Dependency Review cannot run.'
+            echo '::warning::GitHub Dependency graph is unavailable; npm Audit and attributed Trivy dev-dependency scanning remain independent whole-repository gates, but change-aware Dependency Review cannot run.'
             {
               echo '### Dependency Review fallback'
               echo
               echo 'GitHub Dependency graph is unavailable for this repository, so pull-request dependency-diff analysis cannot run.'
-              echo 'Independent npm Audit and repository Trivy remain authoritative repository-wide security gates.'
+              echo 'Independent npm Audit and attributed Trivy dev-dependency scanning remain authoritative repository-wide security gates.'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Review dependency changes
@@ -193,7 +228,7 @@ jobs:
           fail-on-severity: high
       - name: Confirm independent fallback gates
         if: steps.dependency-graph.outputs.available != 'true'
-        run: echo 'Dependency Review service unavailable; npm Audit and repository Trivy remain independent required controls.'
+        run: echo 'Dependency Review service unavailable; npm Audit and attributed Trivy dev-dependency scanning remain independent required controls.'
 
   security-gate:
     name: security-gate
@@ -208,27 +243,21 @@ jobs:
           NPM_AUDIT_RESULT: ${{ needs.npm-audit.result }}
           TRIVY_RESULT: ${{ needs.trivy.result }}
           DEPENDENCY_REVIEW_RESULT: ${{ needs.dependency-review.result }}
+          EVENT_NAME: ${{ github.event_name }}
+          SAME_REPOSITORY_PR: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        shell: bash
         run: |
           set -euo pipefail
-          if [[ "$NPM_AUDIT_RESULT" != "success" ]]; then
-            echo "npm Audit gate did not succeed: $NPM_AUDIT_RESULT" >&2
-            exit 1
+          [[ "$NPM_AUDIT_RESULT" == "success" ]] || { echo "npm-audit=$NPM_AUDIT_RESULT"; exit 1; }
+          [[ "$TRIVY_RESULT" == "success" ]] || { echo "trivy=$TRIVY_RESULT"; exit 1; }
+          if [[ "$SAME_REPOSITORY_PR" == "true" ]]; then
+            [[ "$CODEQL_RESULT" == "success" ]] || { echo "codeql=$CODEQL_RESULT"; exit 1; }
+          else
+            [[ "$CODEQL_RESULT" == "skipped" || "$CODEQL_RESULT" == "success" ]] || { echo "codeql=$CODEQL_RESULT"; exit 1; }
           fi
-          if [[ "$TRIVY_RESULT" != "success" ]]; then
-            echo "Trivy gate did not succeed: $TRIVY_RESULT" >&2
-            exit 1
-          fi
-          if [[ "$CODEQL_RESULT" != "success" && "$CODEQL_RESULT" != "skipped" ]]; then
-            echo "CodeQL gate did not succeed or deliberately skip: $CODEQL_RESULT" >&2
-            exit 1
-          fi
-          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-            if [[ "$DEPENDENCY_REVIEW_RESULT" != "success" ]]; then
-              echo "Dependency Review/fallback gate did not succeed: $DEPENDENCY_REVIEW_RESULT" >&2
-              exit 1
-            fi
-          elif [[ "$DEPENDENCY_REVIEW_RESULT" != "skipped" ]]; then
-            echo "Dependency Review should be skipped outside pull requests, got: $DEPENDENCY_REVIEW_RESULT" >&2
-            exit 1
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            [[ "$DEPENDENCY_REVIEW_RESULT" == "success" ]] || { echo "dependency-review=$DEPENDENCY_REVIEW_RESULT"; exit 1; }
+          else
+            [[ "$DEPENDENCY_REVIEW_RESULT" == "skipped" || "$DEPENDENCY_REVIEW_RESULT" == "success" ]] || { echo "dependency-review=$DEPENDENCY_REVIEW_RESULT"; exit 1; }
           fi
           echo 'Required security jobs satisfied the aggregate policy.'
