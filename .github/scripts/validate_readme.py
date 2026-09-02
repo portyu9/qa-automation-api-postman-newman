@@ -92,6 +92,32 @@ def validate_security_configuration(errors: list[str]) -> None:
     for required in ("trivy-config: trivy.yaml", "list-all-pkgs: true", "npm audit --audit-level=high --json"):
         if required not in security: fail(f"security workflow is missing required dependency evidence contract: {required}", errors)
 
+def validate_external_target_docs(text: str, errors: list[str]) -> None:
+    authorized_command = "NEWMAN_BASE_URL=https://staging.example.test NEWMAN_ALLOW_EXTERNAL_TARGET=true npm test"
+    if authorized_command not in text:
+        fail("README must show the explicit deployed-target command with NEWMAN_ALLOW_EXTERNAL_TARGET=true", errors)
+    if "`NEWMAN_ALLOW_EXTERNAL_TARGET`" not in text:
+        fail("README runtime input reference must document NEWMAN_ALLOW_EXTERNAL_TARGET", errors)
+    if not re.search(r"(?i)external[^\n]{0,180}(?:explicit|exact)[^\n]{0,120}(?:authorization|opt-in|true)", text):
+        fail("README must explain that non-local execution requires explicit external-target authorization", errors)
+    for line in text.splitlines():
+        if "NEWMAN_BASE_URL=" in line and "npm test" in line and "NEWMAN_ALLOW_EXTERNAL_TARGET=true" not in line:
+            fail("README must not show an external Newman command without the explicit authorization variable", errors)
+
+    runtime = (ROOT / "scripts" / "runtime.js").read_text(encoding="utf-8")
+    selftest = (ROOT / "scripts" / "runtime.selftest.js").read_text(encoding="utf-8")
+    runner = (ROOT / "scripts" / "run-newman.js").read_text(encoding="utf-8")
+    evidence = (ROOT / "scripts" / "validate-evidence.js").read_text(encoding="utf-8")
+    for surface, source, required in (
+        ("runtime policy", runtime, "function targetPolicy("),
+        ("runtime policy", runtime, "NEWMAN_ALLOW_EXTERNAL_TARGET"),
+        ("runtime self-test", selftest, "targetPolicy('https://staging.example.test'"),
+        ("runner", runner, "targetPolicy("),
+        ("evidence validator", evidence, "externalTargetAuthorized"),
+    ):
+        if required not in source:
+            fail(f"{surface} is missing external-target authorization contract: {required}", errors)
+
 def validate_toolchain_and_gates(text: str, errors: list[str]) -> None:
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     if not str(package.get("packageManager", "")).startswith("npm@"):
@@ -114,12 +140,12 @@ def main() -> int:
     for required in (ROOT / "LICENSE", ROOT / ".github" / "SECURITY.md"):
         if not required.is_file(): fail(f"required repository surface is missing: {required.relative_to(ROOT)}", errors)
     text = README.read_text(encoding="utf-8")
-    validate_local_links(text, errors); validate_workflow_badges(text, errors); validate_badge_palette(text, errors); validate_mermaid(text, errors); validate_repository_map(text, errors); validate_toolchain_and_gates(text, errors)
+    validate_local_links(text, errors); validate_workflow_badges(text, errors); validate_badge_palette(text, errors); validate_mermaid(text, errors); validate_repository_map(text, errors); validate_external_target_docs(text, errors); validate_toolchain_and_gates(text, errors)
     if errors:
         print("README contract failed:")
         for error in errors: print(f"- {error}")
         return 1
-    print("README contract: ok"); return 0
+    print("README contract: links, badges, diagrams, directory-only map, external-target authorization, dependency security, and stable gates are consistent"); return 0
 
 
 if __name__ == "__main__": raise SystemExit(main())
