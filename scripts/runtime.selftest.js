@@ -12,9 +12,11 @@ const {
   projectFile,
   redactText,
   sanitizeUrl,
+  targetPolicy,
 } = require('./runtime');
 
 const root = path.resolve(__dirname, '..');
+const localBaseUrl = 'http://127.0.0.1:4010';
 
 assert.equal(positiveInteger('REQUEST_TIMEOUT_MS', undefined, 10_000), 10_000);
 assert.equal(positiveInteger('REQUEST_TIMEOUT_MS', '2500', 10_000), 2500);
@@ -32,6 +34,38 @@ for (const value of ['TRUE', '1', 'yes', ' true ', 'line-break\ntrue']) {
     /exact literal true or false/
   );
 }
+
+assert.deepEqual(targetPolicy(localBaseUrl, localBaseUrl, undefined), {
+  baseUrl: localBaseUrl,
+  ownsLocalApi: true,
+  targetClass: 'local-fixture',
+  externalTargetAuthorized: false,
+});
+assert.deepEqual(targetPolicy(`${localBaseUrl}/`, localBaseUrl, 'true'), {
+  baseUrl: localBaseUrl,
+  ownsLocalApi: true,
+  targetClass: 'local-fixture',
+  externalTargetAuthorized: false,
+});
+for (const authorization of [undefined, '', 'false']) {
+  assert.throws(
+    () => targetPolicy('https://staging.example.test', localBaseUrl, authorization),
+    /require explicit authorization/
+  );
+}
+assert.deepEqual(targetPolicy('https://staging.example.test/', localBaseUrl, 'true'), {
+  baseUrl: 'https://staging.example.test',
+  ownsLocalApi: false,
+  targetClass: 'explicit-external',
+  externalTargetAuthorized: true,
+});
+for (const authorization of ['TRUE', '1', 'yes', ' true ']) {
+  assert.throws(
+    () => targetPolicy('https://staging.example.test', localBaseUrl, authorization),
+    /exact literal true or false/
+  );
+}
+
 assert.equal(correlationToken('TEST_RUN_ID', ' newman:contract-42 ', 'fallback'), 'newman:contract-42');
 assert.equal(correlationToken('TEST_RUN_ID', '', 'fallback'), 'fallback');
 for (const value of ['unsafe run id', 'line-break\nheader', 'x'.repeat(129)]) {
