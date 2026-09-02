@@ -18,6 +18,13 @@ function positiveInteger(name, raw, fallback) {
   return value;
 }
 
+function explicitBoolean(name, raw, fallback = false) {
+  if (raw === undefined || raw === null || raw === '') return fallback;
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  throw new Error(`${name} must be the exact literal true or false`);
+}
+
 function correlationToken(name, raw, fallback) {
   const value = String(raw ?? '').trim() || fallback;
   if (!SAFE_CORRELATION_TOKEN.test(value)) {
@@ -131,6 +138,7 @@ module.exports = {
   absoluteHttpBaseUrl,
   compactFailure,
   correlationToken,
+  explicitBoolean,
   optionalLabel,
   positiveInteger,
   projectFile,
