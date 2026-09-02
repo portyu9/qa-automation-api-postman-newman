@@ -89,6 +89,30 @@ function absoluteHttpBaseUrl(name, value) {
   return canonical.endsWith('/') ? canonical.slice(0, -1) : canonical;
 }
 
+function targetPolicy(baseUrl, localBaseUrl, externalAuthorizationRaw) {
+  const resolvedBaseUrl = absoluteHttpBaseUrl('base_url', baseUrl);
+  const resolvedLocalBaseUrl = absoluteHttpBaseUrl('local_base_url', localBaseUrl);
+  const requestedAuthorization = explicitBoolean(
+    'NEWMAN_ALLOW_EXTERNAL_TARGET',
+    externalAuthorizationRaw,
+    false
+  );
+  const ownsLocalApi = resolvedBaseUrl === resolvedLocalBaseUrl;
+
+  if (!ownsLocalApi && !requestedAuthorization) {
+    throw new Error(
+      'External Newman targets require explicit authorization: set NEWMAN_ALLOW_EXTERNAL_TARGET=true together with the reviewed target override'
+    );
+  }
+
+  return {
+    baseUrl: resolvedBaseUrl,
+    ownsLocalApi,
+    targetClass: ownsLocalApi ? 'local-fixture' : 'explicit-external',
+    externalTargetAuthorized: ownsLocalApi ? false : true,
+  };
+}
+
 function sanitizeUrl(value) {
   const raw = String(value ?? '');
   if (raw.toLowerCase() === 'about:blank') return 'about:blank';
@@ -144,4 +168,5 @@ module.exports = {
   projectFile,
   redactText,
   sanitizeUrl,
+  targetPolicy,
 };
