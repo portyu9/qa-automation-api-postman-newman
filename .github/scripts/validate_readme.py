@@ -151,6 +151,12 @@ def main() -> int:
     for required in (ROOT / "LICENSE", ROOT / ".github" / "SECURITY.md"):
         if not required.is_file(): fail(f"required repository surface is missing: {required.relative_to(ROOT)}", errors)
     text = README.read_text(encoding="utf-8")
+    for format_claim in ("Postman Collection v2.1 JSON", "Collection v3", "YAML", "Postman CLI"):
+        if format_claim not in text:
+            fail(f"README must document the exact Newman/Postman format boundary: {format_claim}", errors)
+    for stale_claim in ("Newman-supported JSON format", "newer collection format collections"):
+        if stale_claim in text:
+            fail(f"README contains ambiguous/stale collection-format wording: {stale_claim}", errors)
     validate_local_links(text, errors); validate_workflow_badges(text, errors); validate_badge_palette(text, errors); validate_mermaid(text, errors); validate_repository_map(text, errors); validate_external_target_docs(text, errors); validate_toolchain_and_gates(text, errors)
     if errors:
         print("README contract failed:")
