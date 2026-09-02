@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "exceptions": [
+    {
+      "id": "GHSA-qxc2-j82w-r537",
+      "package": "@faker-js/faker",
+      "severity": "high",
+      "expiresOn": "2026-10-02",
+      "rationale": "Newman 6.2.2 resolves postman-collection 4.4.0, which pins @faker-js/faker 5.5.3. Faker 10.5.0 contains the upstream fix but is API-incompatible with this Postman runtime because postman-collection still requires legacy generators such as faker.address.city. The exception is valid only while the installed upstream source does not invoke helpers.fake and repository execution assets contain no Postman Faker dynamic variables.",
+      "exactVersions": {
+        "newman": "6.2.2",
+        "postman-collection": "4.4.0",
+        "@faker-js/faker": "5.5.3"
+      },
+      "directDependency": {
+        "name": "newman",
+        "version": "6.2.2"
+      },
+      "installedSource": {
+        "path": "node_modules/postman-collection/lib/superstring/dynamic-variables.js",
+        "requiredMarkers": [
+          "require('@faker-js/faker/locale/en')",
+          "faker.address.city"
+        ],
+        "forbiddenPatterns": [
+          "helpers.fake"
+        ]
+      },
+      "forbiddenAssetPatterns": [
+        "{{$random",
+        "helpers.fake"
+      ]
+    }
+  ]
+}

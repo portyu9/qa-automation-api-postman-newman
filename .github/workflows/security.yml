@@ -64,7 +64,9 @@ jobs:
           test "$(node --version)" = "v${NODE_VERSION}"
       - name: Install locked dependency graph without lifecycle scripts
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Audit HIGH and CRITICAL npm advisories with JSON evidence
+      - name: Test governed npm advisory policy
+        run: node .github/scripts/test_npm_audit_validator.js
+      - name: Audit HIGH and CRITICAL npm advisories with governed exceptions
         shell: bash
         run: |
           set -uo pipefail
@@ -73,32 +75,10 @@ jobs:
           npm audit --audit-level=high --json > reports/security/npm-audit.json
           audit_status=$?
           set -e
-          node - <<'NODE'
-          const fs = require('node:fs');
-          const report = JSON.parse(fs.readFileSync('reports/security/npm-audit.json', 'utf8'));
-          if (!report.metadata || !report.metadata.vulnerabilities || !report.metadata.dependencies) {
-            throw new Error('npm audit JSON is missing vulnerability/dependency metadata');
-          }
-          const v = report.metadata.vulnerabilities;
-          const dependencies = report.metadata.dependencies;
-          if (!Number.isInteger(dependencies.total) || dependencies.total < 10) {
-            throw new Error(`npm audit dependency graph is unexpectedly small: ${dependencies.total}`);
-          }
-          if ((v.high ?? 0) !== 0 || (v.critical ?? 0) !== 0) {
-            throw new Error(`npm audit reports gated advisories: high=${v.high}, critical=${v.critical}`);
-          }
-          const summary = [
-            '### npm advisory gate',
-            '',
-            `- Audited dependency graph: \`${dependencies.total}\` packages`,
-            `- HIGH: \`${v.high ?? 'unknown'}\``,
-            `- CRITICAL: \`${v.critical ?? 'unknown'}\``,
-            '- Policy: HIGH/CRITICAL advisories are build-breaking; JSON evidence is retained.',
-          ].join('\n');
-          fs.writeFileSync('reports/security/npm-audit-summary.md', `${summary}\n`);
-          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
-          NODE
-          exit "$audit_status"
+          node .github/scripts/validate_npm_audit.js \
+            --audit reports/security/npm-audit.json \
+            --exceptions .github/security/npm-audit-exceptions.json \
+            --audit-status "$audit_status"
       - name: Upload npm audit evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
