@@ -13,6 +13,7 @@ const {
   absoluteHttpBaseUrl,
   compactFailure,
   correlationToken,
+  explicitBoolean,
   optionalLabel,
   positiveInteger,
   projectFile,
@@ -54,6 +55,17 @@ baseUrlEntry.value = absoluteHttpBaseUrl(
   'base_url',
   process.env.NEWMAN_BASE_URL || baseUrlEntry.value
 );
+const ownsLocalApi = baseUrlEntry.value === DEFAULT_LOCAL_API_URL;
+const externalTargetAuthorized = explicitBoolean(
+  'NEWMAN_ALLOW_EXTERNAL_TARGET',
+  process.env.NEWMAN_ALLOW_EXTERNAL_TARGET,
+  false
+);
+if (!ownsLocalApi && !externalTargetAuthorized) {
+  throw new Error(
+    'External Newman targets require explicit authorization: set NEWMAN_ALLOW_EXTERNAL_TARGET=true together with NEWMAN_BASE_URL'
+  );
+}
 
 const runId = correlationToken('TEST_RUN_ID', process.env.TEST_RUN_ID, `newman-${Date.now()}`);
 const enabledRunIds = environment.values.filter(
@@ -167,7 +179,8 @@ function writeManifest(summary) {
       iterationData: iterationData ? path.relative(root, iterationData) : null,
       folder: folder ? redactText(folder) : null,
       baseUrl: baseUrlEntry.value,
-      targetClass: baseUrlEntry.value === DEFAULT_LOCAL_API_URL ? 'local-fixture' : 'explicit-external',
+      targetClass: ownsLocalApi ? 'local-fixture' : 'explicit-external',
+      externalTargetAuthorized: ownsLocalApi ? false : externalTargetAuthorized,
       timeoutRequestMs: timeoutRequest,
     },
     stats: compactStats(summary.run.stats),
@@ -184,7 +197,6 @@ function writeManifest(summary) {
 }
 
 async function main() {
-  const ownsLocalApi = baseUrlEntry.value === DEFAULT_LOCAL_API_URL;
   let localApi;
 
   try {
