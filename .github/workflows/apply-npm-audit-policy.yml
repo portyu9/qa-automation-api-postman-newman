@@ -19,65 +19,32 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
-
+          import re
           path = Path('.github/workflows/security.yml')
           text = path.read_text(encoding='utf-8')
-          old = '''      - name: Audit HIGH and CRITICAL npm advisories with JSON evidence
-        shell: bash
-        run: |
-          set -uo pipefail
-          mkdir -p reports/security
-          set +e
-          npm audit --audit-level=high --json > reports/security/npm-audit.json
-          audit_status=$?
-          set -e
-          node - <<'NODE'
-          const fs = require('node:fs');
-          const report = JSON.parse(fs.readFileSync('reports/security/npm-audit.json', 'utf8'));
-          if (!report.metadata || !report.metadata.vulnerabilities || !report.metadata.dependencies) {
-            throw new Error('npm audit JSON is missing vulnerability/dependency metadata');
-          }
-          const v = report.metadata.vulnerabilities;
-          const dependencies = report.metadata.dependencies;
-          if (!Number.isInteger(dependencies.total) || dependencies.total < 10) {
-            throw new Error(`npm audit dependency graph is unexpectedly small: ${dependencies.total}`);
-          }
-          if ((v.high ?? 0) !== 0 || (v.critical ?? 0) !== 0) {
-            throw new Error(`npm audit reports gated advisories: high=${v.high}, critical=${v.critical}`);
-          }
-          const summary = [
-            '### npm advisory gate',
-            '',
-            `- Audited dependency graph: \\`${dependencies.total}\\` packages`,
-            `- HIGH: \\`${v.high ?? 'unknown'}\\``,
-            `- CRITICAL: \\`${v.critical ?? 'unknown'}\\``,
-            '- Policy: HIGH/CRITICAL advisories are build-breaking; JSON evidence is retained.',
-          ].join('\\n');
-          fs.writeFileSync('reports/security/npm-audit-summary.md', `${summary}\\n`);
-          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\\n`);
-          NODE
-          exit "$audit_status"
-'''
-          new = '''      - name: Test governed npm advisory policy
-        run: node .github/scripts/test_npm_audit_validator.js
-      - name: Audit HIGH and CRITICAL npm advisories with governed exceptions
-        shell: bash
-        run: |
-          set -uo pipefail
-          mkdir -p reports/security
-          set +e
-          npm audit --audit-level=high --json > reports/security/npm-audit.json
-          audit_status=$?
-          set -e
-          node .github/scripts/validate_npm_audit.js \\
-            --audit reports/security/npm-audit.json \\
-            --exceptions .github/security/npm-audit-exceptions.json \\
-            --audit-status "$audit_status"
-'''
-          count = text.count(old)
-          if count != 1:
-              raise SystemExit(f'expected one npm audit gate block, found {count}')
-          path.write_text(text.replace(old, new), encoding='utf-8')
+          pattern = re.compile(r"      - name: Audit HIGH and CRITICAL npm advisories with JSON evidence\n.*?(?=      - name: Upload npm audit evidence\n)", re.S)
+          matches = list(pattern.finditer(text))
+          if len(matches) != 1:
+              raise SystemExit(f'expected one npm audit gate block, found {len(matches)}')
+          lines = [
+              '      - name: Test governed npm advisory policy',
+              '        run: node .github/scripts/test_npm_audit_validator.js',
+              '      - name: Audit HIGH and CRITICAL npm advisories with governed exceptions',
+              '        shell: bash',
+              '        run: |',
+              '          set -uo pipefail',
+              '          mkdir -p reports/security',
+              '          set +e',
+              '          npm audit --audit-level=high --json > reports/security/npm-audit.json',
+              '          audit_status=$?',
+              '          set -e',
+              '          node .github/scripts/validate_npm_audit.js \\',
+              '            --audit reports/security/npm-audit.json \\',
+              '            --exceptions .github/security/npm-audit-exceptions.json \\',
+              '            --audit-status "$audit_status"',
+          ]
+          replacement = '\n'.join(lines) + '\n'
+          path.write_text(pattern.sub(lambda _: replacement, text, count=1), encoding='utf-8')
       - name: Commit governed advisory policy
         shell: bash
         run: |
