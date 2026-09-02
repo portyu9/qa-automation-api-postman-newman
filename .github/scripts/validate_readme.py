@@ -104,6 +104,17 @@ def validate_external_target_docs(text: str, errors: list[str]) -> None:
         if "NEWMAN_BASE_URL=" in line and "npm test" in line and "NEWMAN_ALLOW_EXTERNAL_TARGET=true" not in line:
             fail("README must not show an external Newman command without the explicit authorization variable", errors)
 
+    architecture_path = ROOT / "docs" / "ARCHITECTURE.md"
+    strategy_path = ROOT / "docs" / "TEST_STRATEGY.md"
+    for path in (architecture_path, strategy_path):
+        if not path.is_file():
+            fail(f"required design document is missing: {path.relative_to(ROOT)}", errors)
+            continue
+        design = path.read_text(encoding="utf-8")
+        for required in ("NEWMAN_ALLOW_EXTERNAL_TARGET", "externalTargetAuthorized", "exact `true`"):
+            if required not in design:
+                fail(f"{path.relative_to(ROOT)} is missing external-target authorization contract: {required}", errors)
+
     runtime = (ROOT / "scripts" / "runtime.js").read_text(encoding="utf-8")
     selftest = (ROOT / "scripts" / "runtime.selftest.js").read_text(encoding="utf-8")
     runner = (ROOT / "scripts" / "run-newman.js").read_text(encoding="utf-8")
@@ -145,7 +156,7 @@ def main() -> int:
         print("README contract failed:")
         for error in errors: print(f"- {error}")
         return 1
-    print("README contract: links, badges, diagrams, directory-only map, external-target authorization, dependency security, and stable gates are consistent"); return 0
+    print("Documentation contract: links, badges, diagrams, directory-only map, external-target authorization, dependency security, and stable gates are consistent"); return 0
 
 
 if __name__ == "__main__": raise SystemExit(main())
