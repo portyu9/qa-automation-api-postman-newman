@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { DEFAULT_LOCAL_API_URL } = require('./local-api');
 
 const root = path.resolve(__dirname, '..');
 const NONE = '<none>';
@@ -69,6 +70,34 @@ function validateExpectedInput(manifest, envName, key) {
   if (actual !== expected) {
     throw new Error(`Newman input mismatch for ${key}: expected=${expected ?? 'null'}, actual=${actual ?? 'null'}`);
   }
+}
+
+function validateTargetEvidence(manifest) {
+  const targetClass = manifest.inputs?.targetClass;
+  const baseUrl = manifest.inputs?.baseUrl;
+  const authorized = manifest.inputs?.externalTargetAuthorized;
+
+  if (targetClass === 'local-fixture') {
+    if (baseUrl !== DEFAULT_LOCAL_API_URL) {
+      throw new Error(`local target evidence must use ${DEFAULT_LOCAL_API_URL}, got ${baseUrl}`);
+    }
+    if (authorized !== false) {
+      throw new Error('local target evidence must record externalTargetAuthorized=false');
+    }
+    return;
+  }
+
+  if (targetClass === 'explicit-external') {
+    if (typeof baseUrl !== 'string' || !baseUrl || baseUrl === DEFAULT_LOCAL_API_URL) {
+      throw new Error('external target evidence must contain a non-local baseUrl');
+    }
+    if (authorized !== true) {
+      throw new Error('external target evidence must record externalTargetAuthorized=true');
+    }
+    return;
+  }
+
+  throw new Error(`unknown Newman target classification: ${targetClass}`);
 }
 
 function enabledEnvironmentValue(environment, key) {
@@ -152,6 +181,7 @@ if (manifest.schemaVersion !== 1) throw new Error('Newman run manifest schemaVer
 if (process.env.TEST_RUN_ID && manifest.runId !== process.env.TEST_RUN_ID) {
   throw new Error('Newman run manifest runId does not match the current execution');
 }
+validateTargetEvidence(manifest);
 if (process.env.EXPECTED_TARGET_CLASS && manifest.inputs?.targetClass !== process.env.EXPECTED_TARGET_CLASS) {
   throw new Error(`Newman target classification mismatch: expected=${process.env.EXPECTED_TARGET_CLASS}, actual=${manifest.inputs?.targetClass}`);
 }
@@ -224,6 +254,6 @@ if (junitTestcases !== assertionsPerIteration) {
 
 console.log(
   `validated Newman evidence: iterations=${iterations}, requests=${requests}, assertions=${assertions}, ` +
-    `junitTestcases=${junitTestcases}, executions=${manifest.executions.length}, ` +
+    `junitTestcases=${junitTestcases}, executions=${manifest.executions.length}, target=${manifest.inputs.targetClass}, ` +
     `profile=${process.env.EXPECTED_EXECUTION_PROFILE || 'generic'}`,
 );
