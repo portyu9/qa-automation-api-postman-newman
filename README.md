@@ -31,7 +31,7 @@ A version-controlled API quality-engineering framework built around **Postman Co
 | Data-driven contract | Iteration precedence across read/write cases | Same local API | JUnit + manifest |
 | Execution ledger | Request ordering/method/path/status/timing/transport class | Newman request events | Bounded allowlisted records |
 | Explicit integration | Same collection against a reviewed deployment | Explicit HTTP(S) override + exact opt-in | External target + authorization classification |
-| Security | Source/dependency/configuration exposure | CodeQL + Trivy + Dependency Review when available | SAST + repository scan + dependency-diff evidence |
+| Security | Source/advisory/dependency/configuration exposure | CodeQL + governed npm Audit + Trivy + Dependency Review when available | SAST + advisory JSON + repository scan + dependency-diff evidence |
 | Documentation | README/workflow/governance consistency | Repository-local validator | Actions status |
 
 ## Architecture
@@ -258,7 +258,7 @@ Do not convert the asset format independently of the runner. For this repository
 
 Primary CI runs the default collection against the runner-owned fixture. Extended CI adds iteration-data breadth against the **same** deterministic fixture. The difference is coverage breadth, not target reliability. Required workflows do not authorize external targets.
 
-Security and docs workflows remain independent failure domains. CodeQL covers source-level security analysis; Trivy covers repository dependency/configuration/secret findings; pull requests use Dependency Review when GitHub Dependency graph is available and record an explicit fallback otherwise. These findings are not collection flakiness.
+Security and docs workflows remain independent failure domains. CodeQL covers source-level security analysis; governed npm Audit evaluates HIGH/CRITICAL advisory exposure with machine-validated temporary exceptions when required; Trivy covers repository dependency/configuration/secret findings; pull requests use Dependency Review when GitHub Dependency graph is available and record an explicit fallback otherwise. These findings are not collection flakiness.
 
 ## Confidence boundaries
 
@@ -287,7 +287,7 @@ Dependabot maintains **npm** and **GitHub Actions**.
 - GitHub Actions are treated as executable dependencies;
 - dependency PRs are evaluated by asset validation, runtime/fixture/ledger self-tests, Newman execution, security, and docs workflows.
 
-Dependabot, npm, lifecycle-script-disabled locked installation, deterministic fixture tests, CodeQL, Trivy, and Dependency Review address different supply-chain risks and should remain separate controls.
+Dependabot, lifecycle-script-disabled locked installation, deterministic fixture tests, CodeQL, governed npm Audit, Trivy, and Dependency Review address different supply-chain risks and should remain separate controls.
 
 ## Failure triage
 
