@@ -10,13 +10,13 @@ const {
   stopLocalApi,
 } = require('./local-api');
 const {
-  absoluteHttpBaseUrl,
   compactFailure,
   correlationToken,
   optionalLabel,
   positiveInteger,
   projectFile,
   redactText,
+  targetPolicy,
 } = require('./runtime');
 
 const root = path.resolve(__dirname, '..');
@@ -50,10 +50,12 @@ if (enabledBaseUrls.length !== 1) {
   throw new Error('Postman environment must define exactly one enabled base_url value');
 }
 const baseUrlEntry = enabledBaseUrls[0];
-baseUrlEntry.value = absoluteHttpBaseUrl(
-  'base_url',
-  process.env.NEWMAN_BASE_URL || baseUrlEntry.value
+const target = targetPolicy(
+  process.env.NEWMAN_BASE_URL || baseUrlEntry.value,
+  DEFAULT_LOCAL_API_URL,
+  process.env.NEWMAN_ALLOW_EXTERNAL_TARGET
 );
+baseUrlEntry.value = target.baseUrl;
 
 const runId = correlationToken('TEST_RUN_ID', process.env.TEST_RUN_ID, `newman-${Date.now()}`);
 const enabledRunIds = environment.values.filter(
@@ -166,8 +168,9 @@ function writeManifest(summary) {
       environment: path.relative(root, environmentPath),
       iterationData: iterationData ? path.relative(root, iterationData) : null,
       folder: folder ? redactText(folder) : null,
-      baseUrl: baseUrlEntry.value,
-      targetClass: baseUrlEntry.value === DEFAULT_LOCAL_API_URL ? 'local-fixture' : 'explicit-external',
+      baseUrl: target.baseUrl,
+      targetClass: target.targetClass,
+      externalTargetAuthorized: target.externalTargetAuthorized,
       timeoutRequestMs: timeoutRequest,
     },
     stats: compactStats(summary.run.stats),
@@ -184,11 +187,10 @@ function writeManifest(summary) {
 }
 
 async function main() {
-  const ownsLocalApi = baseUrlEntry.value === DEFAULT_LOCAL_API_URL;
   let localApi;
 
   try {
-    if (ownsLocalApi) {
+    if (target.ownsLocalApi) {
       localApi = await startLocalApi();
       console.log(`Newman runner owns deterministic local API at ${DEFAULT_LOCAL_API_URL}`);
     }

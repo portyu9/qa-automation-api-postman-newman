@@ -18,6 +18,13 @@ function positiveInteger(name, raw, fallback) {
   return value;
 }
 
+function explicitBoolean(name, raw, fallback = false) {
+  if (raw === undefined || raw === null || raw === '') return fallback;
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  throw new Error(`${name} must be the exact literal true or false`);
+}
+
 function correlationToken(name, raw, fallback) {
   const value = String(raw ?? '').trim() || fallback;
   if (!SAFE_CORRELATION_TOKEN.test(value)) {
@@ -82,6 +89,30 @@ function absoluteHttpBaseUrl(name, value) {
   return canonical.endsWith('/') ? canonical.slice(0, -1) : canonical;
 }
 
+function targetPolicy(baseUrl, localBaseUrl, externalAuthorizationRaw) {
+  const resolvedBaseUrl = absoluteHttpBaseUrl('base_url', baseUrl);
+  const resolvedLocalBaseUrl = absoluteHttpBaseUrl('local_base_url', localBaseUrl);
+  const requestedAuthorization = explicitBoolean(
+    'NEWMAN_ALLOW_EXTERNAL_TARGET',
+    externalAuthorizationRaw,
+    false
+  );
+  const ownsLocalApi = resolvedBaseUrl === resolvedLocalBaseUrl;
+
+  if (!ownsLocalApi && !requestedAuthorization) {
+    throw new Error(
+      'External Newman targets require explicit authorization: set NEWMAN_ALLOW_EXTERNAL_TARGET=true together with the reviewed target override'
+    );
+  }
+
+  return {
+    baseUrl: resolvedBaseUrl,
+    ownsLocalApi,
+    targetClass: ownsLocalApi ? 'local-fixture' : 'explicit-external',
+    externalTargetAuthorized: ownsLocalApi ? false : true,
+  };
+}
+
 function sanitizeUrl(value) {
   const raw = String(value ?? '');
   if (raw.toLowerCase() === 'about:blank') return 'about:blank';
@@ -131,9 +162,11 @@ module.exports = {
   absoluteHttpBaseUrl,
   compactFailure,
   correlationToken,
+  explicitBoolean,
   optionalLabel,
   positiveInteger,
   projectFile,
   redactText,
   sanitizeUrl,
+  targetPolicy,
 };
