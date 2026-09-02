@@ -10,14 +10,13 @@ const {
   stopLocalApi,
 } = require('./local-api');
 const {
-  absoluteHttpBaseUrl,
   compactFailure,
   correlationToken,
-  explicitBoolean,
   optionalLabel,
   positiveInteger,
   projectFile,
   redactText,
+  targetPolicy,
 } = require('./runtime');
 
 const root = path.resolve(__dirname, '..');
@@ -51,21 +50,12 @@ if (enabledBaseUrls.length !== 1) {
   throw new Error('Postman environment must define exactly one enabled base_url value');
 }
 const baseUrlEntry = enabledBaseUrls[0];
-baseUrlEntry.value = absoluteHttpBaseUrl(
-  'base_url',
-  process.env.NEWMAN_BASE_URL || baseUrlEntry.value
+const target = targetPolicy(
+  process.env.NEWMAN_BASE_URL || baseUrlEntry.value,
+  DEFAULT_LOCAL_API_URL,
+  process.env.NEWMAN_ALLOW_EXTERNAL_TARGET
 );
-const ownsLocalApi = baseUrlEntry.value === DEFAULT_LOCAL_API_URL;
-const externalTargetAuthorized = explicitBoolean(
-  'NEWMAN_ALLOW_EXTERNAL_TARGET',
-  process.env.NEWMAN_ALLOW_EXTERNAL_TARGET,
-  false
-);
-if (!ownsLocalApi && !externalTargetAuthorized) {
-  throw new Error(
-    'External Newman targets require explicit authorization: set NEWMAN_ALLOW_EXTERNAL_TARGET=true together with NEWMAN_BASE_URL'
-  );
-}
+baseUrlEntry.value = target.baseUrl;
 
 const runId = correlationToken('TEST_RUN_ID', process.env.TEST_RUN_ID, `newman-${Date.now()}`);
 const enabledRunIds = environment.values.filter(
@@ -178,9 +168,9 @@ function writeManifest(summary) {
       environment: path.relative(root, environmentPath),
       iterationData: iterationData ? path.relative(root, iterationData) : null,
       folder: folder ? redactText(folder) : null,
-      baseUrl: baseUrlEntry.value,
-      targetClass: ownsLocalApi ? 'local-fixture' : 'explicit-external',
-      externalTargetAuthorized: ownsLocalApi ? false : externalTargetAuthorized,
+      baseUrl: target.baseUrl,
+      targetClass: target.targetClass,
+      externalTargetAuthorized: target.externalTargetAuthorized,
       timeoutRequestMs: timeoutRequest,
     },
     stats: compactStats(summary.run.stats),
@@ -200,7 +190,7 @@ async function main() {
   let localApi;
 
   try {
-    if (ownsLocalApi) {
+    if (target.ownsLocalApi) {
       localApi = await startLocalApi();
       console.log(`Newman runner owns deterministic local API at ${DEFAULT_LOCAL_API_URL}`);
     }
