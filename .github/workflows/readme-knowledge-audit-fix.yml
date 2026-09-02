@@ -1,0 +1,73 @@
+name: readme-knowledge-audit-fix
+
+on:
+  push:
+    branches: [docs/readme-knowledge-audit]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: docs/readme-knowledge-audit
+      - name: Apply exact collection-format terminology
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_exact(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one exact match, found {count}: {old[:100]!r}')
+              p.write_text(text.replace(old, new), encoding='utf-8')
+
+          replace_exact(
+              'README.md',
+              'A version-controlled API quality-engineering framework built around **the Newman-supported Postman Collection format** and the **Newman** execution engine.',
+              'A version-controlled API quality-engineering framework built around **Postman Collection v2.1 JSON** and the **Newman** execution engine.'
+          )
+          replace_exact(
+              'README.md',
+              '| Collection format | the Newman-supported JSON format is deliberate because Newman executes the Newman-supported format collections; format/runtime migration is an explicit toolchain change. |',
+              '| Collection format | Postman Collection v2.1 JSON is deliberate because Newman executes that collection generation; adopting Collection v3 YAML requires a Postman CLI/runtime migration and requalification of the surrounding execution contracts. |'
+          )
+          old_section = '''## Newman and collection-format compatibility
+
+This repository intentionally remains a **Newman** framework, so its committed collection uses Postman Collection **the Newman-supported JSON format**.
+
+Postman introduced a newer collection format for Native Git workflows, and Newman does not execute a newer collection format collections. Postman recommends its Postman CLI for a newer collection format/new Native Git workflows. Treat any future migration as an explicit runtime/format/CI decision: migrate the collection, reproduce the existing deterministic target/evidence/exit contracts, and validate behavior before retiring Newman. Do not silently convert the collection format while keeping a Newman runner that cannot execute it.
+
+For an existing Newman-focused framework, the Newman-supported format is therefore a compatibility contract, not technical debt by itself.'''
+          new_section = '''## Newman and collection-format compatibility
+
+This repository intentionally remains a **Newman** framework, and the committed collection declares the official **Postman Collection v2.1 JSON** schema. That identity is part of the executable toolchain contract, not an incidental export detail.
+
+Postman Collection **v3** is a different, YAML-based format used by newer Postman workflows. Newman does not execute Collection v3; Postman CLI is the migration path when v3/Native Git behavior is required. A future migration must therefore change the execution engine and collection format together, then requalify target authorization, deterministic fixture ownership, variable semantics, schema injection, JUnit/reporting behavior, sanitized evidence, and process-exit integrity before Newman is retired.
+
+Do not convert the asset format independently of the runner. For this repository, v2.1 JSON is a deliberate Newman compatibility boundary; it is not represented as a universal recommendation for new Postman implementations.'''
+          replace_exact('README.md', old_section, new_section)
+
+          validator = Path('.github/scripts/validate_readme.py')
+          text = validator.read_text(encoding='utf-8')
+          marker = '    text = README.read_text(encoding="utf-8")\n    validate_local_links(text, errors);'
+          insertion = '''    text = README.read_text(encoding="utf-8")\n    for format_claim in ("Postman Collection v2.1 JSON", "Collection v3", "YAML", "Postman CLI"):\n        if format_claim not in text:\n            fail(f"README must document the exact Newman/Postman format boundary: {format_claim}", errors)\n    for stale_claim in ("Newman-supported JSON format", "newer collection format collections"):\n        if stale_claim in text:\n            fail(f"README contains ambiguous/stale collection-format wording: {stale_claim}", errors)\n    validate_local_links(text, errors);'''
+          if text.count(marker) != 1:
+              raise SystemExit('README validator insertion marker did not match exactly once')
+          validator.write_text(text.replace(marker, insertion), encoding='utf-8')
+      - name: Commit branch-only documentation corrections
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/readme-knowledge-audit-fix.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add README.md .github/scripts/validate_readme.py .github/workflows/readme-knowledge-audit-fix.yml
+          git commit -m 'docs: make Newman collection-format boundary explicit'
+          git push origin HEAD:docs/readme-knowledge-audit
