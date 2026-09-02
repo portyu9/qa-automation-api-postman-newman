@@ -6,6 +6,7 @@ const {
   absoluteHttpBaseUrl,
   compactFailure,
   correlationToken,
+  explicitBoolean,
   optionalLabel,
   positiveInteger,
   projectFile,
@@ -21,6 +22,16 @@ assert.throws(
   () => positiveInteger('REQUEST_TIMEOUT_MS', '0', 10_000),
   /positive integer/
 );
+assert.equal(explicitBoolean('NEWMAN_ALLOW_EXTERNAL_TARGET', undefined), false);
+assert.equal(explicitBoolean('NEWMAN_ALLOW_EXTERNAL_TARGET', ''), false);
+assert.equal(explicitBoolean('NEWMAN_ALLOW_EXTERNAL_TARGET', 'true'), true);
+assert.equal(explicitBoolean('NEWMAN_ALLOW_EXTERNAL_TARGET', 'false'), false);
+for (const value of ['TRUE', '1', 'yes', ' true ', 'line-break\ntrue']) {
+  assert.throws(
+    () => explicitBoolean('NEWMAN_ALLOW_EXTERNAL_TARGET', value),
+    /exact literal true or false/
+  );
+}
 assert.equal(correlationToken('TEST_RUN_ID', ' newman:contract-42 ', 'fallback'), 'newman:contract-42');
 assert.equal(correlationToken('TEST_RUN_ID', '', 'fallback'), 'fallback');
 for (const value of ['unsafe run id', 'line-break\nheader', 'x'.repeat(129)]) {
