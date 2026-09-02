@@ -38,9 +38,10 @@ A version-controlled API quality-engineering framework built around **Postman Co
 
 ```mermaid
 flowchart LR
-    CLI[npm / CI] --> VALIDATE[Asset + runtime + fixture self-tests]
-    CLI --> RUN[run-newman.js]
-    RUN --> POLICY[runtime.js]
+    CHANGE[Repository change] --> CLI[npm / CI]
+    CLI --> VALIDATE[Asset + runtime + fixture self-tests]
+    CLI --> RUN[Newman runner]
+    RUN --> POLICY[Runtime policy]
     RUN --> ENV[Postman environment]
     RUN --> COL[Posts API collection]
     RUN --> SCHEMA[Versioned JSON Schema]
@@ -51,17 +52,39 @@ flowchart LR
     TARGET -->|default| LOCAL[Runner-owned loopback API]
     TARGET -->|reviewed override + exact opt-in| EXT[Reviewed deployed API]
     RUN --> LEDGER[Sanitized request ledger]
-    RUN --> JUNIT[JUnit]
+    RUN --> JUNIT[JUnit evidence]
     RUN --> MAN[Allowlisted manifest]
+    VALIDATE --> CIG[CI / ci-gate]
+    LEDGER --> CIG
+    JUNIT --> CIG
+    MAN --> CIG
+
+    CHANGE --> BREADTH[Iteration-data breadth]
+    BREADTH --> EG[Extended / extended-gate]
+
+    CHANGE --> DOCS[README + workflow contracts]
+    DOCS --> DG[Docs / docs-contract]
+
+    SAST[CodeQL] --> SG[Security / security-gate]
+    AUDIT[npm Audit advisory policy] --> SG
+    TRIVY[Trivy] --> SG
+    REVIEW[Dependency Review when available] --> SG
+
+    CIG --> RESULT[Qualified repository change]
+    EG --> RESULT
+    DG --> RESULT
+    SG --> RESULT
 
     classDef entry fill:#ddf4ff,stroke:#0969da,color:#24292f,stroke-width:1.5px;
-    classDef core fill:#f6f8fa,stroke:#57606a,color:#24292f,stroke-width:1.5px;
-    classDef gate fill:#fbefff,stroke:#8250df,color:#24292f,stroke-width:1.5px;
+    classDef policy fill:#fbefff,stroke:#8250df,color:#24292f,stroke-width:1.5px;
+    classDef runtime fill:#fff8c5,stroke:#9a6700,color:#24292f,stroke-width:1.5px;
     classDef evidence fill:#dafbe1,stroke:#1a7f37,color:#24292f,stroke-width:1.5px;
-    class CLI entry;
-    class POLICY,ENV,COL,SCHEMA,DATA,PREFLIGHT,STATE,TARGET,LOCAL,EXT core;
-    class VALIDATE,RUN gate;
-    class LEDGER,JUNIT,MAN evidence;
+    classDef gate fill:#ffebe9,stroke:#cf222e,color:#24292f,stroke-width:1.5px;
+    class CHANGE,CLI entry;
+    class VALIDATE,POLICY,ENV,COL,SCHEMA,DATA,PREFLIGHT,STATE,DOCS policy;
+    class RUN,TARGET,LOCAL,EXT,BREADTH runtime;
+    class LEDGER,JUNIT,MAN,RESULT evidence;
+    class CIG,EG,DG,SAST,AUDIT,TRIVY,REVIEW,SG gate;
     linkStyle default stroke:#57606a,stroke-width:1.4px;
 ```
 
