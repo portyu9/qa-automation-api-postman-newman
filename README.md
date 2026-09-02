@@ -66,6 +66,7 @@ flowchart LR
     DOCS --> DG[Docs / docs-contract]
 
     SAST[CodeQL] --> SG[Security / security-gate]
+    AUDIT[npm Audit advisory policy] --> SG
     TRIVY[Trivy] --> SG
     REVIEW[Dependency Review when available] --> SG
 
@@ -83,7 +84,7 @@ flowchart LR
     class VALIDATE,POLICY,ENV,COL,SCHEMA,DATA,PREFLIGHT,STATE,DOCS policy;
     class RUN,TARGET,LOCAL,EXT,BREADTH runtime;
     class LEDGER,JUNIT,MAN,RESULT evidence;
-    class CIG,EG,DG,SAST,TRIVY,REVIEW,SG gate;
+    class CIG,EG,DG,SAST,AUDIT,TRIVY,REVIEW,SG gate;
     linkStyle default stroke:#57606a,stroke-width:1.4px;
 ```
 
