@@ -71,7 +71,7 @@ flowchart LR
 | --- | --- |
 | Collection ownership | Request definitions/assertions stay in Postman assets, not duplicated in Node. |
 | Collection identity | `collections/posts-api.postman_collection.json` is provider-neutral and describes the behavior under test. |
-| Collection format | Postman Collection v2.1 JSON is deliberate because Newman executes that collection generation; adopting Collection v3 YAML requires a Postman CLI/runtime migration and requalification of the surrounding execution contracts. |
+| Collection format | Postman Collection v2.1 JSON is deliberate because it is the collection format executed by Newman in this repository; adopting Collection v3 YAML requires a Postman CLI/runtime migration and requalification of the surrounding execution contracts. |
 | Default target | Committed `base_url` is `http://127.0.0.1:4010`. |
 | Target lifecycle | Runner starts/stops the local API only for the deterministic default. |
 | Local state | The fixture owns isolated in-memory created resources for the run and exposes deterministic create→read semantics. |
