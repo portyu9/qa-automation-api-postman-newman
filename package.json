@@ -7,8 +7,8 @@
     "node": ">=22 <23 || >=24 <25"
   },
   "scripts": {
-    "test": "node scripts/run-newman.js",
-    "test:smoke": "NEWMAN_FOLDER='Posts - read' node scripts/run-newman.js",
+    "test": "node -r ./scripts/faker-compat-register.js scripts/run-newman.js",
+    "test:smoke": "NEWMAN_FOLDER='Posts - read' node -r ./scripts/faker-compat-register.js scripts/run-newman.js",
     "validate": "node scripts/validate-assets.js && node scripts/validate-assets.selftest.js && node scripts/faker-compat.selftest.js && node scripts/runtime.selftest.js && node scripts/local-api.selftest.js && node scripts/execution-ledger.selftest.js && node --check scripts/validate-evidence.js",
     "evidence:check": "node scripts/validate-evidence.js"
   },
