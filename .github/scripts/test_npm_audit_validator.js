@@ -147,6 +147,30 @@ function expectFailure(fn, pattern) {
 
 {
   const { root, config, audit } = fixture();
+  config.exceptions = [];
+  audit.vulnerabilities = {};
+  audit.metadata.vulnerabilities = {
+    info: 0,
+    low: 0,
+    moderate: 0,
+    high: 0,
+    critical: 0,
+    total: 0,
+  };
+  const result = validateAuditPolicy({
+    audit,
+    config,
+    root,
+    now: new Date('2026-09-08T12:00:00Z'),
+    auditStatus: 0,
+  });
+  assert.equal(result.waivedRootAdvisories, 0);
+  assert.deepEqual(result.waivedAffectedNodes, []);
+  assert.deepEqual(result.exceptions, []);
+}
+
+{
+  const { root, config, audit } = fixture();
   audit.vulnerabilities.evil = {
     name: 'evil',
     severity: 'high',
