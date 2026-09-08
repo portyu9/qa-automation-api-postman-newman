@@ -136,8 +136,8 @@ function validateAuditPolicy({ audit, config, root, now = new Date(), auditStatu
   if (!Number.isInteger(dependencies.total) || dependencies.total < 10) {
     throw new Error(`npm audit dependency graph is unexpectedly small: ${dependencies.total}`);
   }
-  if (config.schemaVersion !== 1 || !Array.isArray(config.exceptions) || config.exceptions.length === 0) {
-    throw new Error('npm audit exception policy must contain schemaVersion=1 and at least one exception');
+  if (config.schemaVersion !== 1 || !Array.isArray(config.exceptions)) {
+    throw new Error('npm audit exception policy must contain schemaVersion=1 and an exceptions array');
   }
 
   const exceptionsByKey = new Map();
