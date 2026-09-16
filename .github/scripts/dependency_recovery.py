@@ -77,6 +77,18 @@ NON_TRANSIENT_SIGNATURES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("disk-space", re.compile(r"\bENOSPC\b", re.I)),
 )
 
+# Configuration may narrow this set, but it cannot expand recovery authority.
+# Any new recoverable step requires a protected policy-code change.
+SAFE_TRANSIENT_STEPS = {
+    "Pin and verify npm toolchain",
+    "Install locked dependencies without lifecycle scripts",
+    "Install locked dependency graph without lifecycle scripts",
+    "Upload Newman reports",
+    "Upload extended evidence",
+    "Upload npm audit evidence",
+    "Upload repository security evidence",
+}
+
 NEVER_RECOVER_STEPS = {
     "Validate immutable workflow dependencies",
     "Validate assets, runtime, fixture, and evidence policy",
@@ -129,8 +141,8 @@ def validate_recovery_config(config: dict[str, Any]) -> list[str]:
     if not isinstance(config.get("enabled"), bool):
         errors.append("enabled must be boolean")
     attempts = config.get("maxRunAttempts")
-    if not isinstance(attempts, int) or not 1 <= attempts <= 3:
-        errors.append("maxRunAttempts must be an integer from 1 to 3")
+    if attempts != 2:
+        errors.append("maxRunAttempts must equal 2 so automatic recovery is capped at one rerun")
     steps = config.get("transientSteps")
     if not isinstance(steps, list) or not steps:
         errors.append("transientSteps must be a non-empty array")
@@ -139,6 +151,9 @@ def validate_recovery_config(config: dict[str, Any]) -> list[str]:
             errors.append("every transientSteps entry must be a non-empty string")
         if len(set(steps)) != len(steps):
             errors.append("transientSteps must not contain duplicates")
+        for step in steps:
+            if step not in SAFE_TRANSIENT_STEPS:
+                errors.append(f"{step} is outside the code-level Postman/Newman infrastructure recovery allowlist")
         for forbidden in sorted(NEVER_RECOVER_STEPS):
             if forbidden in steps:
                 errors.append(f"{forbidden} must never be eligible for automatic recovery")

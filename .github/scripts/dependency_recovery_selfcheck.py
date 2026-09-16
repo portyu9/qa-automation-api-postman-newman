@@ -208,6 +208,13 @@ class RecoverySelfCheck(unittest.TestCase):
     def test_recovery_config_is_bounded_and_infrastructure_only(self) -> None:
         self.assertEqual(validate_recovery_config(RECOVERY), [])
         self.assertEqual(RECOVERY["maxRunAttempts"], 2)
+        for attempts in (1, 3, 4):
+            self.assertTrue(validate_recovery_config({**RECOVERY, "maxRunAttempts": attempts}))
+        unknown = {
+            **RECOVERY,
+            "transientSteps": [*RECOVERY["transientSteps"], "Future Newman bootstrap"],
+        }
+        self.assertTrue(validate_recovery_config(unknown))
         for forbidden in (
             "Validate assets, runtime, fixture, and evidence policy",
             "Execute collection against runner-owned local API",
@@ -223,7 +230,6 @@ class RecoverySelfCheck(unittest.TestCase):
             "Evaluate security jobs",
         ):
             self.assertNotIn(forbidden, RECOVERY["transientSteps"], forbidden)
-        self.assertTrue(validate_recovery_config({**RECOVERY, "maxRunAttempts": 4}))
         invalid = {**RECOVERY, "transientSteps": [*RECOVERY["transientSteps"], "Execute collection against runner-owned local API"]}
         self.assertTrue(validate_recovery_config(invalid))
 
