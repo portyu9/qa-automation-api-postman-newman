@@ -55,6 +55,9 @@
     ".github/scripts/dependency_governance_selfcheck.py",
     ".github/scripts/dependency_recovery.py",
     ".github/scripts/dependency_recovery_selfcheck.py",
+    ".github/scripts/validate_codeql_sarif.py",
+    ".github/scripts/validate_codeql_sarif_selfcheck.py",
+    ".github/scripts/validate_security_stack.py",
     ".github/dependabot.yml"
   ],
   "ecosystems": {

@@ -215,6 +215,14 @@ class DependencyGovernanceTests(unittest.TestCase):
         self.assertFalse(result["eligible"])
         self.assertIn("explicit transitive security/compatibility overrides", result["reasons"][0])
 
+    def test_zero_alert_security_files_remain_manual_control_plane(self) -> None:
+        for path in (
+            ".github/scripts/validate_codeql_sarif.py",
+            ".github/scripts/validate_codeql_sarif_selfcheck.py",
+            ".github/scripts/validate_security_stack.py",
+        ):
+            self.assertIn(path, CONFIG["manualReviewPaths"])
+
     def test_action_line_requires_immutable_sha_and_version_annotation(self) -> None:
         good = "      - uses: actions/checkout@" + "a" * 40 + " # v7.0.1"
         self.assertIsNotNone(ACTION_LINE.fullmatch(good))
