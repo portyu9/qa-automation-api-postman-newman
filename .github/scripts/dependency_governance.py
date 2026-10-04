@@ -903,7 +903,7 @@ def render_comment(
     assessment: Assessment,
     config: dict[str, Any],
     merged: bool = False,
-    dispatches: list[dict[str, str]] | None = None,
+    dispatches: list[dict[str, Any]] | None = None,
 ) -> str:
     dispatches = dispatches or []
     pull = assessment.pull
@@ -955,23 +955,26 @@ def render_comment(
         lines.extend(
             [
                 "",
-                "**Post-merge main requalification dispatch**",
+                "**Post-merge exact-main requalification**",
                 "",
-                "| Workflow | Dispatch |",
-                "| --- | --- |",
+                "| Workflow | Stable gate | State |",
+                "| --- | --- | --- |",
             ]
         )
         for item in dispatches:
-            lines.append(f"| `{item['workflow']}` | `{item['state']}` |")
+            lines.append(
+                f"| `{item['workflow']}` | `{item.get('gate', 'unknown')}` | `{item['state']}` |"
+            )
 
     lines.extend(
         [
             "",
             "> Safety invariant: privileged governance executes only trusted default-branch code, "
             "requires an untouched GitHub-signed Dependabot commit directly on current main, proves "
-            "exact workflow identities and stable gates for the exact head, never regenerates Python "
-            "locks inside a dependency PR, and never autonomously merges major, downgrade, stale-base, "
-            "aged-out, control-plane, or semantically ambiguous changes.",
+            "exact workflow identities and stable gates for the exact head, requires an owner-authenticated "
+            "approval for that exact SHA, and never autonomously merges major, downgrade, stale-base, "
+            "aged-out, control-plane, or semantically ambiguous changes. Every autonomous merge is then "
+            "requalified on its exact resulting main commit.",
             "",
         ]
     )
