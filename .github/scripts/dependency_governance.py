@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -25,6 +26,20 @@ ACTION_LINE = re.compile(
     r"@(?P<ref>[0-9a-fA-F]{40})(?P<suffix>\s+#\s+v(?P<version>\d+(?:\.\d+){0,2})\s*)$"
 )
 POSITIVE_INT = re.compile(r"^[1-9]\d*$")
+QUALIFICATION_POLL_ATTEMPTS = 90
+QUALIFICATION_POLL_INTERVAL_SECONDS = 10.0
+POST_MERGE_POLL_ATTEMPTS = 120
+POST_MERGE_POLL_INTERVAL_SECONDS = 10.0
+_QUALIFICATION_WAIT_STATES = frozenset(
+    {
+        "requested",
+        "existing-queued",
+        "existing-in_progress",
+        "existing-waiting",
+        "existing-pending",
+        "existing-requested",
+    }
+)
 
 
 class GovernanceError(RuntimeError):
@@ -85,6 +100,10 @@ def validate_config(config: dict[str, Any]) -> list[str]:
         errors.append("botLogin must be dependabot[bot]")
     if not isinstance(config.get("botUserId"), int) or config["botUserId"] <= 0:
         errors.append("botUserId must be a positive integer")
+    if config.get("trustedWorkflowDispatchActorLogin") != "github-actions[bot]":
+        errors.append("trustedWorkflowDispatchActorLogin must be github-actions[bot]")
+    if config.get("trustedWorkflowDispatchActorUserId") != 41898282:
+        errors.append("trustedWorkflowDispatchActorUserId must be the GitHub Actions bot identity")
     for key in (
         "botAuthorEmail",
         "trustedCommitterLogin",
@@ -100,6 +119,12 @@ def validate_config(config: dict[str, Any]) -> list[str]:
         errors.append("mergeMethod is invalid")
     if not isinstance(config.get("automergeEnabled"), bool):
         errors.append("automergeEnabled must be boolean")
+    if config.get("ownerApprovalRequired") is not True:
+        errors.append("ownerApprovalRequired must remain true")
+    if not nonempty(config.get("ownerApprovalLogin")):
+        errors.append("ownerApprovalLogin must be non-empty")
+    if not isinstance(config.get("ownerApprovalUserId"), int) or config.get("ownerApprovalUserId", 0) <= 0:
+        errors.append("ownerApprovalUserId must be a positive integer")
 
     for key, maximum in (
         ("maxChangedFiles", 100),
@@ -162,6 +187,9 @@ def validate_config(config: dict[str, Any]) -> list[str]:
         ".github/scripts/validate_codeql_sarif.py",
         ".github/scripts/validate_codeql_sarif_selfcheck.py",
         ".github/scripts/validate_security_stack.py",
+        ".github/scripts/validate_npm_audit.js",
+        ".github/scripts/test_npm_audit_validator.js",
+        ".github/security/npm-audit-exceptions.json",
         ".github/dependabot.yml",
     }
     for path in sorted(critical):
@@ -567,10 +595,21 @@ def validate_npm_manual(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def workflow_identity_matches(
+def _workflow_subject_identity_matches(
     run: dict[str, Any], pull: dict[str, Any], requirement: dict[str, str]
 ) -> bool:
     expected_path = f".github/workflows/{requirement['file']}"
+    return (
+        run.get("name") == requirement["workflow"]
+        and run.get("path") == expected_path
+        and run.get("head_sha") == (pull.get("head") or {}).get("sha")
+        and run.get("head_branch") == (pull.get("head") or {}).get("ref")
+    )
+
+
+def workflow_identity_matches(
+    run: dict[str, Any], pull: dict[str, Any], requirement: dict[str, str]
+) -> bool:
     associations = run.get("pull_requests")
     association_matches = (
         not isinstance(associations, list)
@@ -578,18 +617,51 @@ def workflow_identity_matches(
         or any(item.get("number") == pull.get("number") for item in associations)
     )
     return (
-        run.get("name") == requirement["workflow"]
-        and run.get("path") == expected_path
+        _workflow_subject_identity_matches(run, pull, requirement)
         and run.get("event") == "pull_request"
-        and run.get("head_sha") == (pull.get("head") or {}).get("sha")
-        and run.get("head_branch") == (pull.get("head") or {}).get("ref")
         and association_matches
     )
 
 
+def trusted_dispatch_identity_matches(
+    run: dict[str, Any],
+    pull: dict[str, Any],
+    requirement: dict[str, str],
+    config: dict[str, Any],
+) -> bool:
+    actor = run.get("actor") or {}
+    triggering_actor = run.get("triggering_actor") or {}
+    expected_login = config["trustedWorkflowDispatchActorLogin"]
+    expected_id = config["trustedWorkflowDispatchActorUserId"]
+    return (
+        _workflow_subject_identity_matches(run, pull, requirement)
+        and run.get("event") == "workflow_dispatch"
+        and actor.get("login") == expected_login
+        and actor.get("id") == expected_id
+        and triggering_actor.get("login") == expected_login
+        and triggering_actor.get("id") == expected_id
+    )
+
+
 def select_qualification_run(
-    runs: list[dict[str, Any]], pull: dict[str, Any], requirement: dict[str, str]
+    runs: list[dict[str, Any]],
+    pull: dict[str, Any],
+    requirement: dict[str, str],
+    config: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
+    if config is not None:
+        dispatches = [
+            run
+            for run in runs
+            if trusted_dispatch_identity_matches(run, pull, requirement, config)
+        ]
+        dispatches.sort(
+            key=lambda run: str(run.get("updated_at") or run.get("created_at") or ""),
+            reverse=True,
+        )
+        if dispatches:
+            return dispatches[0]
+
     matches = [run for run in runs if workflow_identity_matches(run, pull, requirement)]
     matches.sort(
         key=lambda run: str(run.get("updated_at") or run.get("created_at") or ""),
@@ -602,14 +674,14 @@ def qualification_for_head(
     api: GitHubApi, pull: dict[str, Any], config: dict[str, Any]
 ) -> dict[str, Any]:
     head_sha = (pull.get("head") or {}).get("sha")
-    query = urllib.parse.urlencode({"head_sha": head_sha, "event": "pull_request"})
+    query = urllib.parse.urlencode({"head_sha": head_sha})
     runs = api.paginate(f"/actions/runs?{query}", "workflow_runs")
     qualifications: list[dict[str, Any]] = []
     any_failed = False
     all_success = True
 
     for requirement in config["requiredWorkflows"]:
-        run = select_qualification_run(runs, pull, requirement)
+        run = select_qualification_run(runs, pull, requirement, config)
         if not run:
             all_success = False
             qualifications.append({**requirement, "state": "missing", "runId": None})
@@ -637,6 +709,7 @@ def qualification_for_head(
         if len(gates) != 1:
             state = "gate-missing" if not gates else "gate-ambiguous"
             all_success = False
+            any_failed = True
         else:
             gate = gates[0]
             if gate.get("status") != "completed":
@@ -650,17 +723,24 @@ def qualification_for_head(
                 state = "success"
         qualifications.append({**requirement, "state": state, "runId": run.get("id")})
 
-    exact_runs = [
-        run
-        for run in runs
-        if run.get("head_sha") == head_sha and run.get("event") == "pull_request"
-    ]
-    exact_runs.sort(
+    relevant_runs: list[dict[str, Any]] = []
+    for run in runs:
+        if run.get("head_sha") != head_sha:
+            continue
+        if run.get("event") == "pull_request":
+            relevant_runs.append(run)
+            continue
+        if any(
+            trusted_dispatch_identity_matches(run, pull, requirement, config)
+            for requirement in config["requiredWorkflows"]
+        ):
+            relevant_runs.append(run)
+    relevant_runs.sort(
         key=lambda run: str(run.get("updated_at") or run.get("created_at") or ""),
         reverse=True,
     )
     latest_by_identity: dict[str, dict[str, Any]] = {}
-    for run in exact_runs:
+    for run in relevant_runs:
         identity = str(run.get("path") or run.get("name") or run.get("id"))
         latest_by_identity.setdefault(identity, run)
     for run in latest_by_identity.values():
@@ -676,7 +756,6 @@ def qualification_for_head(
         "qualifications": qualifications,
         "runCount": len(runs),
     }
-
 
 def get_current_base_sha(api: GitHubApi, branch: str) -> str:
     payload = api.get(f"/git/ref/heads/{urllib.parse.quote(branch, safe='')}")
@@ -917,12 +996,457 @@ def upsert_comment(api: GitHubApi, pull_number: int, marker: str, body: str) -> 
         api.post(f"/issues/{pull_number}/comments", {"body": body})
 
 
-def maybe_merge(
+OWNER_REVIEW_MARKER = "<!-- dependency-owner-review:v1:"
+OWNER_APPROVAL_MARKER = "<!-- dependency-owner-approval:v1:"
+OWNER_REFRESH_MARKER = "<!-- dependency-owner-refresh:v1:"
+
+
+def verify_owner_identity(owner_api: GitHubApi | None, config: dict[str, Any]) -> None:
+    if owner_api is None:
+        raise GovernanceError(
+            "DEPENDABOT_OWNER_TOKEN is required for owner-authenticated Dependabot refresh, review, and approval"
+        )
+    identity = owner_api.get("https://api.github.com/user")
+    if not isinstance(identity, dict):
+        raise GovernanceError("owner token identity response is invalid")
+    if (
+        identity.get("login") != config["ownerApprovalLogin"]
+        or identity.get("id") != config["ownerApprovalUserId"]
+    ):
+        raise GovernanceError(
+            "DEPENDABOT_OWNER_TOKEN does not authenticate the configured repository owner identity"
+        )
+
+
+def has_exact_owner_approval(
+    owner_api: GitHubApi, number: int, head_sha: str, config: dict[str, Any]
+) -> bool:
+    reviews = owner_api.paginate(f"/pulls/{number}/reviews")
+    return any(
+        review.get("state") == "APPROVED"
+        and review.get("commit_id") == head_sha
+        and (review.get("user") or {}).get("login") == config["ownerApprovalLogin"]
+        and (review.get("user") or {}).get("id") == config["ownerApprovalUserId"]
+        for review in reviews
+    )
+
+
+def ensure_owner_review_and_approval(
+    owner_api: GitHubApi | None,
+    assessment: Assessment,
+    config: dict[str, Any],
+) -> None:
+    verify_owner_identity(owner_api, config)
+    assert owner_api is not None
+    number = int(assessment.pull["number"])
+    head_sha = str((assessment.pull.get("head") or {}).get("sha") or "")
+    if not re.fullmatch(r"[0-9a-f]{40}", head_sha):
+        raise GovernanceError("Dependabot head SHA is not canonical")
+
+    comment_marker = f"{OWNER_REVIEW_MARKER}{head_sha} -->"
+    comments = owner_api.paginate(f"/issues/{number}/comments")
+    exact_comments = [
+        comment
+        for comment in comments
+        if comment_marker in str(comment.get("body") or "")
+        and (comment.get("user") or {}).get("login") == config["ownerApprovalLogin"]
+        and (comment.get("user") or {}).get("id") == config["ownerApprovalUserId"]
+    ]
+    if len(exact_comments) > 1:
+        raise GovernanceError(f"PR #{number} has duplicate exact-head owner review comments")
+    if not exact_comments:
+        owner_api.post(
+            f"/issues/{number}/comments",
+            {
+                "body": (
+                    f"{comment_marker}\n"
+                    "## Owner-authenticated Dependabot review\n\n"
+                    f"- Exact head: {head_sha}\n"
+                    "- Canonical Dependabot provenance: **pass**\n"
+                    "- Semantic dependency scope: **pass**\n"
+                    "- Exact-head CI / Extended / Security / Docs qualification: **pass**\n"
+                    "- Action: approve this exact head, revalidate it, then merge only if unchanged and qualified.\n"
+                )
+            },
+        )
+
+    if not has_exact_owner_approval(owner_api, number, head_sha, config):
+        owner_api.post(
+            f"/pulls/{number}/reviews",
+            {
+                "event": "APPROVE",
+                "commit_id": head_sha,
+                "body": (
+                    f"{OWNER_APPROVAL_MARKER}{head_sha} -->\n"
+                    "Owner-authenticated automated approval for this exact Dependabot head after "
+                    "canonical provenance, governed semantic scope, and all required exact-head "
+                    "qualification gates passed. Repository rules remain authoritative."
+                ),
+            },
+        )
+    if not has_exact_owner_approval(owner_api, number, head_sha, config):
+        raise GovernanceError(f"PR #{number} does not have the required exact-head owner approval")
+
+
+def request_dependabot_refresh(
+    owner_api: GitHubApi | None,
+    assessment: Assessment,
+    config: dict[str, Any],
+) -> bool:
+    stale_reason = "PR is not rebased directly on the current base branch head"
+    if assessment.provenance.get("reasons") != [stale_reason]:
+        return False
+    verify_owner_identity(owner_api, config)
+    assert owner_api is not None
+
+    number = int(assessment.pull["number"])
+    head_sha = str((assessment.pull.get("head") or {}).get("sha") or "")
+    marker = f"{OWNER_REFRESH_MARKER}{head_sha}:{assessment.base_sha}:rebase -->"
+    comments = owner_api.paginate(f"/issues/{number}/comments")
+    if any(
+        marker in str(comment.get("body") or "")
+        and (comment.get("user") or {}).get("login") == config["ownerApprovalLogin"]
+        and (comment.get("user") or {}).get("id") == config["ownerApprovalUserId"]
+        for comment in comments
+    ):
+        return True
+
+    owner_api.post(
+        f"/issues/{number}/comments",
+        {
+            "body": (
+                "@dependabot rebase\n\n"
+                f"{marker}\n"
+                "Requested by the configured push-capable repository owner because the exact "
+                "Dependabot source commit is no longer parented on current main. Qualification "
+                "restarts on the new exact head; no merge or security gate is bypassed."
+            )
+        },
+    )
+    return True
+
+
+def request_exact_head_qualification_dispatches(
     api: GitHubApi,
     assessment: Assessment,
     config: dict[str, Any],
+) -> list[dict[str, Any]]:
+    eligible = (
+        assessment.pull.get("state") == "open"
+        and assessment.provenance["eligible"]
+        and assessment.metadata["eligible"]
+        and assessment.semantic["eligible"]
+    )
+    if not eligible:
+        return []
+
+    head = assessment.pull.get("head") or {}
+    head_branch = str(head.get("ref") or "")
+    head_sha = str(head.get("sha") or "")
+    if not head_branch or not re.fullmatch(r"[0-9a-f]{40}", head_sha):
+        raise GovernanceError("eligible pull request has no exact head branch/SHA")
+
+    ref_payload = api.get(f"/git/ref/heads/{urllib.parse.quote(head_branch, safe='')}")
+    live_head = ((ref_payload or {}).get("object") or {}).get("sha")
+    if live_head != head_sha:
+        raise GovernanceError("pull-request head moved before exact-head qualification dispatch")
+
+    query = urllib.parse.urlencode({"head_sha": head_sha})
+    runs = api.paginate(f"/actions/runs?{query}", "workflow_runs")
+    outcomes: list[dict[str, Any]] = []
+
+    for requirement in config["requiredWorkflows"]:
+        trusted_dispatches = [
+            run
+            for run in runs
+            if trusted_dispatch_identity_matches(run, assessment.pull, requirement, config)
+        ]
+        trusted_dispatches.sort(
+            key=lambda run: str(run.get("updated_at") or run.get("created_at") or ""),
+            reverse=True,
+        )
+        if trusted_dispatches:
+            existing = trusted_dispatches[0]
+            state = str(existing.get("status") or "unknown")
+            if state == "completed":
+                state = str(existing.get("conclusion") or "unknown")
+            outcomes.append(
+                {
+                    "workflow": requirement["workflow"],
+                    "file": requirement["file"],
+                    "state": f"existing-{state}",
+                    "runId": existing.get("id"),
+                }
+            )
+            continue
+
+        pull_runs = [
+            run for run in runs if workflow_identity_matches(run, assessment.pull, requirement)
+        ]
+        pull_runs.sort(
+            key=lambda run: str(run.get("updated_at") or run.get("created_at") or ""),
+            reverse=True,
+        )
+        pull_run = pull_runs[0] if pull_runs else None
+        should_dispatch = pull_run is None or (
+            pull_run.get("status") == "completed"
+            and pull_run.get("conclusion") == "action_required"
+        )
+        if not should_dispatch:
+            outcomes.append(
+                {
+                    "workflow": requirement["workflow"],
+                    "file": requirement["file"],
+                    "state": "not-needed",
+                    "runId": pull_run.get("id") if pull_run else None,
+                }
+            )
+            continue
+
+        api.post(
+            f"/actions/workflows/{urllib.parse.quote(requirement['file'], safe='')}/dispatches",
+            {"ref": head_branch},
+        )
+        outcomes.append(
+            {
+                "workflow": requirement["workflow"],
+                "file": requirement["file"],
+                "state": "requested",
+                "runId": None,
+            }
+        )
+    return outcomes
+
+
+def wait_for_exact_head_qualification_dispatches(
+    api: GitHubApi,
+    assessment: Assessment,
+    config: dict[str, Any],
+    dispatch_outcomes: list[dict[str, Any]],
+    *,
+    sleep_fn: Callable[[float], None] = time.sleep,
+    poll_attempts: int = QUALIFICATION_POLL_ATTEMPTS,
+    poll_interval_seconds: float = QUALIFICATION_POLL_INTERVAL_SECONDS,
+) -> Assessment:
+    if not any(
+        str(item.get("state") or "") in _QUALIFICATION_WAIT_STATES
+        for item in dispatch_outcomes
+    ):
+        return assessment
+    if poll_attempts < 1:
+        raise GovernanceError("qualification poll_attempts must be positive")
+    if poll_interval_seconds < 0:
+        raise GovernanceError("qualification poll_interval_seconds must be non-negative")
+
+    number = parse_positive_integer(assessment.pull.get("number"), "pull request number")
+    original_head = str((assessment.pull.get("head") or {}).get("sha") or "")
+    original_base = assessment.base_sha
+    current = assessment
+
+    for attempt in range(poll_attempts):
+        current_head = str((current.pull.get("head") or {}).get("sha") or "")
+        if (
+            current.pull.get("state") != "open"
+            or current_head != original_head
+            or current.base_sha != original_base
+        ):
+            return assessment
+        if not (
+            current.provenance.get("eligible") is True
+            and current.metadata.get("eligible") is True
+            and current.semantic.get("eligible") is True
+        ):
+            return current
+        qualification = current.qualification or {}
+        if qualification.get("allSuccess") is True:
+            return current
+        if qualification.get("anyFailed") is True and not any(
+            item.get("state") == "requested" for item in dispatch_outcomes
+        ):
+            return current
+        if attempt + 1 >= poll_attempts:
+            break
+        sleep_fn(poll_interval_seconds)
+        current = assess_pull(api, number, config, include_qualification=True)
+    return current
+
+
+def trusted_main_dispatch_identity_matches(
+    run: dict[str, Any],
+    merge_sha: str,
+    requirement: dict[str, Any],
+    config: dict[str, Any],
+) -> bool:
+    actor = run.get("actor") or {}
+    triggering_actor = run.get("triggering_actor") or {}
+    return (
+        run.get("name") == requirement["workflow"]
+        and run.get("path") == f".github/workflows/{requirement['file']}"
+        and run.get("event") == "workflow_dispatch"
+        and run.get("head_sha") == merge_sha
+        and run.get("head_branch") == config["baseBranch"]
+        and actor.get("login") == config["trustedWorkflowDispatchActorLogin"]
+        and actor.get("id") == config["trustedWorkflowDispatchActorUserId"]
+        and triggering_actor.get("login") == config["trustedWorkflowDispatchActorLogin"]
+        and triggering_actor.get("id") == config["trustedWorkflowDispatchActorUserId"]
+    )
+
+
+def dispatch_and_wait_for_main_requalification(
+    api: GitHubApi,
+    merge_sha: str,
+    config: dict[str, Any],
+    *,
+    sleep_fn: Callable[[float], None] = time.sleep,
+    poll_attempts: int = POST_MERGE_POLL_ATTEMPTS,
+    poll_interval_seconds: float = POST_MERGE_POLL_INTERVAL_SECONDS,
+) -> list[dict[str, Any]]:
+    if not re.fullmatch(r"[0-9a-f]{40}", merge_sha):
+        raise GovernanceError("merge result did not provide a canonical main commit SHA")
+    if get_current_base_sha(api, config["baseBranch"]) != merge_sha:
+        raise GovernanceError("main moved before exact post-merge requalification dispatch")
+
+    outcomes: list[dict[str, Any]] = []
+    for requirement in config["requiredWorkflows"]:
+        try:
+            api.post(
+                f"/actions/workflows/{urllib.parse.quote(requirement['file'], safe='')}/dispatches",
+                {"ref": config["baseBranch"]},
+            )
+            outcomes.append(
+                {
+                    "workflow": requirement["workflow"],
+                    "file": requirement["file"],
+                    "gate": requirement["gate"],
+                    "state": "requested",
+                    "runId": None,
+                }
+            )
+        except GovernanceError as exc:
+            outcomes.append(
+                {
+                    "workflow": requirement["workflow"],
+                    "file": requirement["file"],
+                    "gate": requirement["gate"],
+                    "state": "dispatch-failed",
+                    "runId": None,
+                    "error": str(exc),
+                }
+            )
+    if any(item["state"] == "dispatch-failed" for item in outcomes):
+        return outcomes
+
+    for _attempt in range(poll_attempts):
+        query = urllib.parse.urlencode({"head_sha": merge_sha})
+        runs = api.paginate(f"/actions/runs?{query}", "workflow_runs")
+        settled: list[dict[str, Any]] = []
+        all_success = True
+        terminal_failure = False
+
+        for requirement in config["requiredWorkflows"]:
+            matches = [
+                run
+                for run in runs
+                if trusted_main_dispatch_identity_matches(run, merge_sha, requirement, config)
+            ]
+            matches.sort(
+                key=lambda run: str(run.get("updated_at") or run.get("created_at") or ""),
+                reverse=True,
+            )
+            if not matches:
+                all_success = False
+                settled.append(
+                    {
+                        "workflow": requirement["workflow"],
+                        "file": requirement["file"],
+                        "gate": requirement["gate"],
+                        "state": "waiting-for-run",
+                        "runId": None,
+                    }
+                )
+                continue
+
+            run = matches[0]
+            run_id = parse_positive_integer(run.get("id"), "post-merge workflow run id")
+            status = str(run.get("status") or "")
+            conclusion = str(run.get("conclusion") or "")
+            if status != "completed":
+                all_success = False
+                settled.append(
+                    {
+                        "workflow": requirement["workflow"],
+                        "file": requirement["file"],
+                        "gate": requirement["gate"],
+                        "state": status or "pending",
+                        "runId": run_id,
+                    }
+                )
+                continue
+            if conclusion != "success":
+                all_success = False
+                terminal_failure = True
+                settled.append(
+                    {
+                        "workflow": requirement["workflow"],
+                        "file": requirement["file"],
+                        "gate": requirement["gate"],
+                        "state": f"workflow-{conclusion or 'unknown'}",
+                        "runId": run_id,
+                    }
+                )
+                continue
+
+            jobs = api.paginate(f"/actions/runs/{run_id}/jobs", "jobs")
+            gates = [job for job in jobs if job.get("name") == requirement["gate"]]
+            if len(gates) != 1:
+                all_success = False
+                terminal_failure = True
+                state = "gate-missing" if not gates else "gate-ambiguous"
+            else:
+                gate = gates[0]
+                gate_status = str(gate.get("status") or "")
+                gate_conclusion = str(gate.get("conclusion") or "")
+                if gate_status != "completed":
+                    all_success = False
+                    state = gate_status or "gate-pending"
+                elif gate_conclusion != "success":
+                    all_success = False
+                    terminal_failure = True
+                    state = f"gate-{gate_conclusion or 'unknown'}"
+                else:
+                    state = "success"
+            settled.append(
+                {
+                    "workflow": requirement["workflow"],
+                    "file": requirement["file"],
+                    "gate": requirement["gate"],
+                    "state": state,
+                    "runId": run_id,
+                }
+            )
+
+        if all_success:
+            return settled
+        if terminal_failure:
+            return settled
+        outcomes = settled
+        if poll_interval_seconds < 0:
+            raise GovernanceError("post-merge poll interval must be non-negative")
+        sleep_fn(poll_interval_seconds)
+
+    return [
+        {**item, "state": f"timeout-{item['state']}" if item["state"] != "success" else "success"}
+        for item in outcomes
+    ]
+
+
+def maybe_merge(
+    api: GitHubApi,
+    owner_api: GitHubApi | None,
+    assessment: Assessment,
+    config: dict[str, Any],
     allow_merge: bool,
-) -> tuple[bool, Assessment, list[dict[str, str]]]:
+) -> tuple[bool, Assessment, list[dict[str, Any]]]:
     eligible = (
         assessment.provenance["eligible"]
         and assessment.metadata["eligible"]
@@ -931,6 +1455,7 @@ def maybe_merge(
     if not eligible or not (assessment.qualification or {}).get("allSuccess") or not allow_merge:
         return False, assessment, []
 
+    ensure_owner_review_and_approval(owner_api, assessment, config)
     refreshed = assess_pull(api, assessment.pull["number"], config, include_qualification=True)
     still_eligible = (
         refreshed.pull.get("state") == "open"
@@ -945,11 +1470,19 @@ def maybe_merge(
     if not still_eligible:
         return False, refreshed, []
 
+    verify_owner_identity(owner_api, config)
+    assert owner_api is not None
+    refreshed_head = str((refreshed.pull.get("head") or {}).get("sha") or "")
+    if not has_exact_owner_approval(
+        owner_api, int(refreshed.pull["number"]), refreshed_head, config
+    ):
+        raise GovernanceError("exact-head owner approval disappeared before merge")
+
     result = api.put(
         f"/pulls/{refreshed.pull['number']}/merge",
         {
             "merge_method": config["mergeMethod"],
-            "sha": (refreshed.pull.get("head") or {})["sha"],
+            "sha": refreshed_head,
             "commit_title": refreshed.pull.get("title") or "Qualified dependency update",
             "commit_message": (
                 "Qualified and merged by dependency governance after canonical provenance, "
@@ -960,35 +1493,14 @@ def maybe_merge(
     merged = bool(result and result.get("merged") is True)
     if not merged:
         raise GovernanceError(f"GitHub rejected exact-head merge: {result}")
-
-    dispatches: list[dict[str, str]] = []
-    for requirement in config["requiredWorkflows"]:
-        try:
-            api.post(
-                f"/actions/workflows/{urllib.parse.quote(requirement['file'], safe='')}/dispatches",
-                {"ref": config["baseBranch"]},
-            )
-            dispatches.append(
-                {
-                    "workflow": requirement["workflow"],
-                    "file": requirement["file"],
-                    "state": "requested",
-                }
-            )
-        except GovernanceError as exc:
-            dispatches.append(
-                {
-                    "workflow": requirement["workflow"],
-                    "file": requirement["file"],
-                    "state": "failed",
-                    "error": str(exc),
-                }
-            )
-    return True, refreshed, dispatches
+    merge_sha = str((result or {}).get("sha") or "")
+    requalification = dispatch_and_wait_for_main_requalification(api, merge_sha, config)
+    return True, refreshed, requalification
 
 
 def process_pull(
     api: GitHubApi,
+    owner_api: GitHubApi | None,
     number: int,
     config: dict[str, Any],
     allow_merge: bool,
@@ -998,21 +1510,39 @@ def process_pull(
     if user.get("login") != config["botLogin"] or user.get("id") != config["botUserId"]:
         return {"skipped": True, "reason": "not canonical Dependabot", "merged": False}
 
-    merged, final_assessment, dispatches = maybe_merge(api, assessment, config, allow_merge)
-    body = render_comment(final_assessment, config, merged=merged, dispatches=dispatches)
+    request_dependabot_refresh(owner_api, assessment, config)
+    qualification_dispatches = request_exact_head_qualification_dispatches(
+        api, assessment, config
+    )
+    if qualification_dispatches:
+        assessment = assess_pull(api, number, config, include_qualification=True)
+        if allow_merge:
+            assessment = wait_for_exact_head_qualification_dispatches(
+                api, assessment, config, qualification_dispatches
+            )
+
+    merged, final_assessment, requalification = maybe_merge(
+        api, owner_api, assessment, config, allow_merge
+    )
+    body = render_comment(
+        final_assessment, config, merged=merged, dispatches=requalification
+    )
     upsert_comment(api, number, config["statusCommentMarker"], body)
 
-    failed_dispatches = [item for item in dispatches if item["state"] != "requested"]
-    if merged and failed_dispatches:
+    failed = [
+        item
+        for item in requalification
+        if item.get("state") != "success"
+    ]
+    if merged and failed:
         detail = "; ".join(
-            f"{item['workflow']}: {item.get('error', 'unknown error')}"
-            for item in failed_dispatches
+            f"{item['workflow']}: {item.get('state')} {item.get('error', '')}".strip()
+            for item in failed
         )
         raise GovernanceError(
-            f"merge succeeded but {len(failed_dispatches)} post-merge workflow dispatch(es) failed: {detail}"
+            f"merge succeeded but exact-main requalification failed for {len(failed)} workflow(s): {detail}"
         )
     return {"skipped": False, "merged": merged, "assessment": final_assessment}
-
 
 def reconcile_independently(
     pulls: list[dict[str, Any]],
@@ -1083,9 +1613,15 @@ def main(argv: list[str] | None = None) -> int:
         raise GovernanceError("GITHUB_EVENT_NAME is required")
     event = _read_event()
     api = GitHubApi(token, repository, config["maxPaginationPages"])
+    owner_token = os.environ.get("DEPENDABOT_OWNER_TOKEN", "").strip()
+    owner_api = (
+        GitHubApi(owner_token, repository, config["maxPaginationPages"])
+        if owner_token
+        else None
+    )
     allow_merge = os.environ.get("ALLOW_MERGE") == "true"
 
-    if event_name == "schedule":
+    if event_name in {"schedule", "push"}:
         pulls = api.paginate("/pulls?state=open")
         dependabot_pulls = [
             pull
@@ -1095,7 +1631,9 @@ def main(argv: list[str] | None = None) -> int:
         ]
         results, failures = reconcile_independently(
             dependabot_pulls,
-            lambda pull: process_pull(api, pull["number"], config, allow_merge),
+            lambda pull: process_pull(
+                api, owner_api, pull["number"], config, allow_merge
+            ),
         )
         print(json.dumps({"reconciled": len(results), "failed": failures}, indent=2))
         if failures:
@@ -1111,7 +1649,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"No pull request resolved for {event_name}; nothing to do.")
         return 0
 
-    result = process_pull(api, number, config, allow_merge)
+    result = process_pull(api, owner_api, number, config, allow_merge)
     print(
         json.dumps(
             {
