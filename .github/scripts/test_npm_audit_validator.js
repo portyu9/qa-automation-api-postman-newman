@@ -123,6 +123,97 @@ function fixture() {
   return { root, config, audit };
 }
 
+function nodeForgeFixture() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'npm-audit-node-forge-'));
+  fs.mkdirSync(path.join(root, 'collections'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'node_modules/postman-runtime/lib/authorizer'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'collections/test.json'), '{"name":"safe"}\n');
+  fs.writeFileSync(path.join(root, 'postman_environment.json'), '{"values":[]}\n');
+  fs.writeFileSync(
+    path.join(root, 'package.json'),
+    JSON.stringify({ devDependencies: { newman: '6.2.2' } }, null, 2)
+  );
+  fs.writeFileSync(
+    path.join(root, 'package-lock.json'),
+    JSON.stringify(
+      {
+        packages: {
+          'node_modules/newman': { version: '6.2.2' },
+          'node_modules/postman-runtime': { version: '7.39.1' },
+          'node_modules/node-forge': { version: '1.4.0' },
+        },
+      },
+      null,
+      2
+    )
+  );
+  fs.writeFileSync(
+    path.join(root, 'node_modules/postman-runtime/lib/authorizer/asap.js'),
+    [
+      "nodeForge = require('node-forge')",
+      'nodeForge.asn1.fromDer(buffer)',
+      'nodeForge.pki.privateKeyFromAsn1(asn1)',
+      'nodeForge.pki.privateKeyToPem(key)',
+      'new jose.SignJWT(claims)',
+    ].join('\n') + '\n'
+  );
+
+  const config = {
+    schemaVersion: 1,
+    exceptions: [
+      {
+        id: 'GHSA-86w9-cpqp-85rv',
+        package: 'node-forge',
+        severity: 'high',
+        expiresOn: '2026-10-18',
+        exactVersions: {
+          newman: '6.2.2',
+          'postman-runtime': '7.39.1',
+          'node-forge': '1.4.0',
+        },
+        directDependency: { name: 'newman', version: '6.2.2' },
+        installedSource: {
+          path: 'node_modules/postman-runtime/lib/authorizer/asap.js',
+          requiredMarkers: [
+            "nodeForge = require('node-forge')",
+            'nodeForge.asn1.fromDer',
+            'nodeForge.pki.privateKeyFromAsn1',
+            'nodeForge.pki.privateKeyToPem',
+            'new jose.SignJWT',
+          ],
+          forbiddenPatterns: ['.verify(', 'publicKeyFrom', 'certificateFrom'],
+        },
+        forbiddenAssetPatterns: ['asap'],
+      },
+    ],
+  };
+
+  const advice = {
+    name: 'node-forge',
+    severity: 'high',
+    url: 'https://github.com/advisories/GHSA-86w9-cpqp-85rv',
+  };
+  const audit = {
+    auditReportVersion: 2,
+    vulnerabilities: {
+      'node-forge': { name: 'node-forge', severity: 'high', via: [advice] },
+      'postman-runtime': { name: 'postman-runtime', severity: 'high', via: ['node-forge'] },
+    },
+    metadata: {
+      vulnerabilities: { info: 0, low: 0, moderate: 0, high: 2, critical: 0, total: 2 },
+      dependencies: {
+        prod: 0,
+        dev: 20,
+        optional: 0,
+        peer: 0,
+        peerOptional: 0,
+        total: 20,
+      },
+    },
+  };
+  return { root, config, audit };
+}
+
 function expectFailure(fn, pattern) {
   assert.throws(fn, pattern);
 }
@@ -273,6 +364,70 @@ function expectFailure(fn, pattern) {
         auditStatus: 2,
       }),
     /operationally/
+  );
+}
+
+{
+  const { root, config, audit } = nodeForgeFixture();
+  const result = validateAuditPolicy({
+    audit,
+    config,
+    root,
+    now: new Date('2026-10-04T12:00:00Z'),
+    auditStatus: 1,
+  });
+  assert.equal(result.waivedRootAdvisories, 1);
+  assert.deepEqual(result.waivedAffectedNodes, ['node-forge', 'postman-runtime']);
+}
+
+{
+  const { root, config, audit } = nodeForgeFixture();
+  fs.writeFileSync(path.join(root, 'collections/test.json'), '{"auth":{"type":"asap"}}\n');
+  expectFailure(
+    () =>
+      validateAuditPolicy({
+        audit,
+        config,
+        root,
+        now: new Date('2026-10-04T12:00:00Z'),
+        auditStatus: 1,
+      }),
+    /forbidden execution-surface pattern/
+  );
+}
+
+{
+  const { root, config, audit } = nodeForgeFixture();
+  fs.appendFileSync(
+    path.join(root, 'node_modules/postman-runtime/lib/authorizer/asap.js'),
+    '\nnodeForge.pki.rsa.verify(signature)\n'
+  );
+  expectFailure(
+    () =>
+      validateAuditPolicy({
+        audit,
+        config,
+        root,
+        now: new Date('2026-10-04T12:00:00Z'),
+        auditStatus: 1,
+      }),
+    /forbidden upstream source pattern/
+  );
+}
+
+{
+  const { root, config, audit } = nodeForgeFixture();
+  config.exceptions[0].expiresOn = '2026-10-03';
+  expectFailure(
+    () =>
+      validateAuditPolicy({
+        audit,
+        config,
+        root,
+        now: new Date('2026-10-04T12:00:00Z'),
+        auditStatus: 1,
+      }),
+    /expired/
   );
 }
 
