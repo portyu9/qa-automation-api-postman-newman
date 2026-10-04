@@ -11,12 +11,18 @@ from dependency_governance import (
     GovernanceError,
     classify_ecosystem,
     compare_versions,
+    dispatch_and_wait_for_main_requalification,
+    ensure_owner_review_and_approval,
     event_pull_number,
+    has_exact_owner_approval,
     parse_dependabot_metadata,
     parse_positive_integer,
     reconcile_independently,
     render_comment,
+    request_dependabot_refresh,
+    request_exact_head_qualification_dispatches,
     select_qualification_run,
+    trusted_dispatch_identity_matches,
     validate_actions_semantic_change,
     validate_config,
     validate_npm_manual,
@@ -87,6 +93,50 @@ def canonical_fixture() -> tuple[str, str, dict, dict]:
     return base_sha, head_sha, pull, commit
 
 
+class OwnerApi:
+    def __init__(
+        self,
+        login: str = CONFIG["ownerApprovalLogin"],
+        user_id: int = CONFIG["ownerApprovalUserId"],
+    ) -> None:
+        self.identity = {"login": login, "id": user_id}
+        self.comments: list[dict] = []
+        self.reviews: list[dict] = []
+
+    def get(self, path: str) -> dict:
+        if path == "https://api.github.com/user":
+            return dict(self.identity)
+        raise AssertionError(path)
+
+    def paginate(self, path: str, selector: str | None = None) -> list[dict]:
+        if path.endswith("/comments"):
+            return list(self.comments)
+        if path.endswith("/reviews"):
+            return list(self.reviews)
+        raise AssertionError(path)
+
+    def post(self, path: str, payload: dict) -> dict:
+        if path.endswith("/comments"):
+            item = {
+                "id": len(self.comments) + 1,
+                "body": payload["body"],
+                "user": dict(self.identity),
+            }
+            self.comments.append(item)
+            return item
+        if path.endswith("/reviews"):
+            item = {
+                "id": len(self.reviews) + 1,
+                "body": payload["body"],
+                "user": dict(self.identity),
+                "state": "APPROVED",
+                "commit_id": payload["commit_id"],
+            }
+            self.reviews.append(item)
+            return item
+        raise AssertionError(path)
+
+
 class DependencyGovernanceTests(unittest.TestCase):
     def test_config_is_fail_closed(self) -> None:
         self.assertEqual(validate_config(CONFIG), [])
@@ -99,6 +149,240 @@ class DependencyGovernanceTests(unittest.TestCase):
         }
         self.assertTrue(validate_config(major))
         self.assertTrue(validate_config({**CONFIG, "manualReviewPaths": []}))
+        self.assertTrue(validate_config({**CONFIG, "ownerApprovalRequired": False}))
+        self.assertTrue(validate_config({**CONFIG, "ownerApprovalUserId": 0}))
+        self.assertTrue(
+            validate_config({**CONFIG, "trustedWorkflowDispatchActorLogin": "someone"})
+        )
+        for protected in (
+            ".github/security/npm-audit-exceptions.json",
+            ".github/scripts/validate_npm_audit.js",
+            ".github/scripts/test_npm_audit_validator.js",
+        ):
+            narrowed = {
+                **CONFIG,
+                "manualReviewPaths": [
+                    item for item in CONFIG["manualReviewPaths"] if item != protected
+                ],
+            }
+            self.assertTrue(validate_config(narrowed), protected)
+
+    def test_owner_review_approval_and_stale_refresh_are_exact_head_bound(self) -> None:
+        base, head, pull, commit = canonical_fixture()
+        assessment = Assessment(
+            pull=pull,
+            base_sha=base,
+            files=[{"filename": ".github/workflows/security.yml"}],
+            ecosystem="github-actions",
+            provenance={"eligible": True, "reasons": [], "commit": commit},
+            metadata={"eligible": True, "reasons": [], "metadata": []},
+            semantic={"eligible": True, "reasons": [], "changes": []},
+            qualification={"allSuccess": True, "anyFailed": False, "qualifications": []},
+        )
+        owner = OwnerApi()
+        ensure_owner_review_and_approval(owner, assessment, CONFIG)
+        self.assertEqual(len(owner.comments), 1)
+        self.assertEqual(len(owner.reviews), 1)
+        self.assertTrue(has_exact_owner_approval(owner, pull["number"], head, CONFIG))
+        ensure_owner_review_and_approval(owner, assessment, CONFIG)
+        self.assertEqual(len(owner.comments), 1)
+        self.assertEqual(len(owner.reviews), 1)
+
+        stale = Assessment(
+            pull=pull,
+            base_sha="c" * 40,
+            files=assessment.files,
+            ecosystem=assessment.ecosystem,
+            provenance={
+                "eligible": False,
+                "reasons": ["PR is not rebased directly on the current base branch head"],
+                "commit": commit,
+            },
+            metadata=assessment.metadata,
+            semantic={"eligible": False, "reasons": [], "changes": []},
+            qualification={"allSuccess": False, "anyFailed": False, "qualifications": []},
+        )
+        refresh_owner = OwnerApi()
+        self.assertTrue(request_dependabot_refresh(refresh_owner, stale, CONFIG))
+        self.assertIn("@dependabot rebase", refresh_owner.comments[0]["body"])
+        self.assertIn(head, refresh_owner.comments[0]["body"])
+        self.assertTrue(request_dependabot_refresh(refresh_owner, stale, CONFIG))
+        self.assertEqual(len(refresh_owner.comments), 1)
+
+    def test_action_required_runs_dispatch_trusted_exact_head_workflows(self) -> None:
+        base, head, pull, commit = canonical_fixture()
+        assessment = Assessment(
+            pull=pull,
+            base_sha=base,
+            files=[{"filename": ".github/workflows/security.yml"}],
+            ecosystem="github-actions",
+            provenance={"eligible": True, "reasons": [], "commit": commit},
+            metadata={"eligible": True, "reasons": [], "metadata": []},
+            semantic={"eligible": True, "reasons": [], "changes": []},
+            qualification={"allSuccess": False, "anyFailed": True, "qualifications": []},
+        )
+
+        class QualificationApi:
+            def __init__(self) -> None:
+                self.posts: list[tuple[str, dict]] = []
+                self.runs: list[dict] = []
+                for index, requirement in enumerate(CONFIG["requiredWorkflows"], start=1):
+                    self.runs.append(
+                        {
+                            "id": index,
+                            "name": requirement["workflow"],
+                            "path": f".github/workflows/{requirement['file']}",
+                            "event": "pull_request",
+                            "head_sha": head,
+                            "head_branch": pull["head"]["ref"],
+                            "pull_requests": [{"number": pull["number"]}],
+                            "status": "completed",
+                            "conclusion": "action_required",
+                            "updated_at": f"2026-09-02T10:00:0{index}Z",
+                        }
+                    )
+
+            def get(self, path: str) -> dict:
+                if path.startswith("/git/ref/heads/"):
+                    return {"object": {"sha": head}}
+                raise AssertionError(path)
+
+            def paginate(self, path: str, selector: str | None = None) -> list[dict]:
+                if path.startswith("/actions/runs?"):
+                    return list(self.runs)
+                raise AssertionError(path)
+
+            def post(self, path: str, payload: dict) -> dict:
+                self.posts.append((path, payload))
+                return {}
+
+        api = QualificationApi()
+        outcomes = request_exact_head_qualification_dispatches(api, assessment, CONFIG)
+        self.assertEqual(len(api.posts), len(CONFIG["requiredWorkflows"]))
+        self.assertTrue(all(item["state"] == "requested" for item in outcomes))
+        self.assertTrue(all(payload == {"ref": pull["head"]["ref"]} for _, payload in api.posts))
+
+        requirement = CONFIG["requiredWorkflows"][0]
+        trusted = {
+            "id": 99,
+            "name": requirement["workflow"],
+            "path": f".github/workflows/{requirement['file']}",
+            "event": "workflow_dispatch",
+            "head_sha": head,
+            "head_branch": pull["head"]["ref"],
+            "actor": {
+                "login": CONFIG["trustedWorkflowDispatchActorLogin"],
+                "id": CONFIG["trustedWorkflowDispatchActorUserId"],
+            },
+            "triggering_actor": {
+                "login": CONFIG["trustedWorkflowDispatchActorLogin"],
+                "id": CONFIG["trustedWorkflowDispatchActorUserId"],
+            },
+            "status": "queued",
+            "conclusion": None,
+            "updated_at": "2026-09-02T11:00:00Z",
+        }
+        self.assertTrue(trusted_dispatch_identity_matches(trusted, pull, requirement, CONFIG))
+        self.assertEqual(
+            select_qualification_run([api.runs[0], trusted], pull, requirement, CONFIG)["id"],
+            99,
+        )
+        spoofed = {**trusted, "triggering_actor": {"login": "someone", "id": 1}}
+        self.assertFalse(
+            trusted_dispatch_identity_matches(spoofed, pull, requirement, CONFIG)
+        )
+
+    def test_post_merge_requalification_requires_exact_trusted_main_gate_success(self) -> None:
+        merge_sha = "d" * 40
+
+        class MainApi:
+            def __init__(self) -> None:
+                self.posts: list[tuple[str, dict]] = []
+                self.runs: list[dict] = []
+                self.jobs: dict[int, list[dict]] = {}
+                for index, requirement in enumerate(CONFIG["requiredWorkflows"], start=100):
+                    self.runs.append(
+                        {
+                            "id": index,
+                            "name": requirement["workflow"],
+                            "path": f".github/workflows/{requirement['file']}",
+                            "event": "workflow_dispatch",
+                            "head_sha": merge_sha,
+                            "head_branch": CONFIG["baseBranch"],
+                            "actor": {
+                                "login": CONFIG["trustedWorkflowDispatchActorLogin"],
+                                "id": CONFIG["trustedWorkflowDispatchActorUserId"],
+                            },
+                            "triggering_actor": {
+                                "login": CONFIG["trustedWorkflowDispatchActorLogin"],
+                                "id": CONFIG["trustedWorkflowDispatchActorUserId"],
+                            },
+                            "status": "completed",
+                            "conclusion": "success",
+                            "updated_at": f"2026-09-02T12:00:{index - 100:02d}Z",
+                        }
+                    )
+                    self.jobs[index] = [
+                        {
+                            "name": requirement["gate"],
+                            "status": "completed",
+                            "conclusion": "success",
+                        }
+                    ]
+
+            def get(self, path: str) -> dict:
+                if path == f"/git/ref/heads/{CONFIG['baseBranch']}":
+                    return {"object": {"sha": merge_sha}}
+                raise AssertionError(path)
+
+            def post(self, path: str, payload: dict) -> dict:
+                self.posts.append((path, payload))
+                return {}
+
+            def paginate(self, path: str, selector: str | None = None) -> list[dict]:
+                if path.startswith("/actions/runs?"):
+                    return list(self.runs)
+                import re as _re
+                match = _re.fullmatch(r"/actions/runs/(\d+)/jobs", path)
+                if match:
+                    return list(self.jobs[int(match.group(1))])
+                raise AssertionError(path)
+
+        api = MainApi()
+        result = dispatch_and_wait_for_main_requalification(
+            api,
+            merge_sha,
+            CONFIG,
+            sleep_fn=lambda _: None,
+            poll_attempts=1,
+            poll_interval_seconds=0,
+        )
+        self.assertEqual(len(api.posts), len(CONFIG["requiredWorkflows"]))
+        self.assertTrue(all(item["state"] == "success" for item in result))
+
+        failed_api = MainApi()
+        failed_api.jobs[100][0]["conclusion"] = "failure"
+        failed = dispatch_and_wait_for_main_requalification(
+            failed_api,
+            merge_sha,
+            CONFIG,
+            sleep_fn=lambda _: None,
+            poll_attempts=1,
+            poll_interval_seconds=0,
+        )
+        self.assertEqual(failed[0]["state"], "gate-failure")
+
+        spoofed_api = MainApi()
+        spoofed_api.runs[0]["triggering_actor"] = {"login": "someone", "id": 1}
+        spoofed = dispatch_and_wait_for_main_requalification(
+            spoofed_api,
+            merge_sha,
+            CONFIG,
+            sleep_fn=lambda _: None,
+            poll_attempts=1,
+            poll_interval_seconds=0,
+        )
+        self.assertEqual(spoofed[0]["state"], "timeout-waiting-for-run")
 
     def test_positive_integer_parser(self) -> None:
         self.assertEqual(parse_positive_integer("54"), 54)
@@ -418,6 +702,7 @@ class DependencyGovernanceTests(unittest.TestCase):
         workflow = (
             ROOT / ".github" / "workflows" / "dependency-governance.yml"
         ).read_text(encoding="utf-8")
+        self.assertIn("push:", workflow)
         self.assertIn("pull_request_target:", workflow)
         self.assertIn("workflow_run:", workflow)
         self.assertIn("schedule:", workflow)
@@ -425,7 +710,9 @@ class DependencyGovernanceTests(unittest.TestCase):
         self.assertIn("persist-credentials: false", workflow)
         self.assertNotRegex(workflow, r"ref:\s*\$\{\{\s*github\.event\.pull_request\.head")
         self.assertNotRegex(workflow, r"ref:\s*\$\{\{\s*github\.event\.workflow_run\.head_sha")
-        self.assertIn("'self-test' || 'reconcile'", workflow)
+        self.assertIn("|| 'reconcile'", workflow)
+        self.assertIn("DEPENDABOT_OWNER_TOKEN", workflow)
+        self.assertIn("timeout-minutes: 30", workflow)
 
 
 if __name__ == "__main__":
