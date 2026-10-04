@@ -695,7 +695,8 @@ class DependencyGovernanceTests(unittest.TestCase):
             },
         )
         body = render_comment(assessment, CONFIG)
-        self.assertIn("never regenerates Python locks", body)
+        self.assertIn("owner-authenticated approval", body)
+        self.assertIn("requalified on its exact resulting main commit", body)
         self.assertIn("MANUAL / WAIT", body)
 
     def test_privileged_workflow_never_checks_out_dependabot_head(self) -> None:
