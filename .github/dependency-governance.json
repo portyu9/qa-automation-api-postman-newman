@@ -58,7 +58,10 @@
     ".github/scripts/validate_codeql_sarif.py",
     ".github/scripts/validate_codeql_sarif_selfcheck.py",
     ".github/scripts/validate_security_stack.py",
-    ".github/dependabot.yml"
+    ".github/dependabot.yml",
+    ".github/security/npm-audit-exceptions.json",
+    ".github/scripts/validate_npm_audit.js",
+    ".github/scripts/test_npm_audit_validator.js"
   ],
   "ecosystems": {
     "npm": {
@@ -76,5 +79,10 @@
         ".yaml"
       ]
     }
-  }
+  },
+  "ownerApprovalRequired": true,
+  "ownerApprovalLogin": "portyu9",
+  "ownerApprovalUserId": 35150859,
+  "trustedWorkflowDispatchActorLogin": "github-actions[bot]",
+  "trustedWorkflowDispatchActorUserId": 41898282
 }
