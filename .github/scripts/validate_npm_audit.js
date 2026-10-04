@@ -243,7 +243,7 @@ function main() {
     );
   }
   lines.push(
-    '- Exception validity is conditional on exact lock versions, installed upstream source markers, and absence of forbidden Faker execution-surface patterns.'
+    '- Exception validity is conditional on exact lock versions, installed upstream source markers, and absence of every configured forbidden execution-surface pattern.'
   );
   const summary = `${lines.join('\n')}\n`;
   const summaryPath = path.join(root, 'reports/security/npm-audit-summary.md');
