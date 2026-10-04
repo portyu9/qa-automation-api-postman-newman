@@ -1,6 +1,8 @@
 name: dependency-governance
 
 on:
+  push:
+    branches: [main]
   pull_request:
     paths:
       - '.github/dependabot.yml'
@@ -13,6 +15,9 @@ on:
       - '.github/scripts/validate_codeql_sarif.py'
       - '.github/scripts/validate_codeql_sarif_selfcheck.py'
       - '.github/scripts/validate_security_stack.py'
+      - '.github/scripts/validate_npm_audit.js'
+      - '.github/scripts/test_npm_audit_validator.js'
+      - '.github/security/npm-audit-exceptions.json'
       - '.github/workflows/security.yml'
       - '.github/workflows/dependency-governance.yml'
   pull_request_target:
@@ -38,7 +43,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: dependency-governance-${{ github.event.pull_request.head.ref || github.event.workflow_run.head_branch || inputs['pr-number'] || github.ref_name || github.run_id }}-${{ github.event_name == 'pull_request' && 'self-test' || 'reconcile' }}
+  # All privileged reconcile events serialize through one lock; untrusted PR
+  # self-tests remain isolated on their own head branch.
+  group: dependency-governance-${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || 'reconcile' }}
   cancel-in-progress: false
 
 env:
@@ -93,7 +100,7 @@ jobs:
     name: govern-dependabot
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 30
     permissions:
       actions: write
       checks: read
@@ -130,5 +137,6 @@ jobs:
       - name: Reconcile dependency governance
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ALLOW_MERGE: ${{ github.event_name == 'workflow_run' || github.event_name == 'schedule' || inputs['allow-merge'] }}
+          DEPENDABOT_OWNER_TOKEN: ${{ secrets.DEPENDABOT_OWNER_TOKEN }}
+          ALLOW_MERGE: ${{ github.event_name == 'workflow_run' || github.event_name == 'schedule' || github.event_name == 'push' || inputs['allow-merge'] }}
         run: python .github/scripts/dependency_governance.py
