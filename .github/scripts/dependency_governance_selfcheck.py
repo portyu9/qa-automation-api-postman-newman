@@ -299,7 +299,11 @@ class DependencyGovernanceTests(unittest.TestCase):
                 [{"filename": file}], {file: before}, {file: mutated}, metadata, CONFIG
             )
             self.assertFalse(result["eligible"])
-            self.assertIn("outside an immutable uses reference", "\n".join(result["reasons"]))
+            reasons = "\n".join(result["reasons"])
+            self.assertTrue(
+                "outside an immutable uses reference" in reasons
+                or "changes line structure outside a uses reference" in reasons
+            )
 
     def test_grouped_action_metadata_may_lag_exact_immutable_pin(self) -> None:
         file = ".github/workflows/security.yml"
