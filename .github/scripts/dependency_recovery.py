@@ -341,7 +341,7 @@ def recovery_scope_assessment(
                 reasons.append(
                     f"{item.get('name') or 'action'} uses non-routine update type {update_type or 'unknown'}"
                 )
-    merge_policy = "manual" if ecosystem == "npm" else "governed-autonomous"
+    merge_policy = "governed-autonomous"
     return {
         "eligible": not reasons,
         "reasons": unique(reasons),
