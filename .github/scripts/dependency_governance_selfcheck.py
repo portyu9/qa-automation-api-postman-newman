@@ -25,7 +25,7 @@ from dependency_governance import (
     trusted_dispatch_identity_matches,
     validate_actions_semantic_change,
     validate_config,
-    validate_npm_manual,
+    validate_npm_semantic_change,
     validate_provenance,
     validate_signed_metadata,
     workflow_identity_matches,
@@ -494,10 +494,70 @@ class DependencyGovernanceTests(unittest.TestCase):
             "unknown",
         )
 
-    def test_npm_is_deliberately_manual_due_to_override_and_lock_security_scope(self) -> None:
-        result = validate_npm_manual(CONFIG)
-        self.assertFalse(result["eligible"])
-        self.assertIn("explicit transitive security/compatibility overrides", result["reasons"][0])
+    def test_npm_patch_is_automatic_without_weakening_runtime_overrides(self) -> None:
+        base = {
+            "name": "qa-automation-api-postman-newman", "version": "1.0.0",
+            "engines": {"node": ">=22 <23 || >=24 <25"},
+            "scripts": {"test": "node scripts/run-newman.js"},
+            "devDependencies": {"newman": "6.2.2"},
+            "overrides": {"handlebars": "4.7.10", "flatted": "3.4.4"},
+        }
+        head = json.loads(json.dumps(base))
+        head["devDependencies"]["newman"] = "6.2.3"
+        root = {"name": base["name"], "version": base["version"],
+                "engines": base["engines"], "devDependencies": {"newman": "6.2.2"}}
+        old_entry = {"version": "6.2.2", "integrity": "sha512-before"}
+        new_entry = {"version": "6.2.3", "integrity": "sha512-after"}
+        lock = {"name": base["name"], "version": base["version"], "lockfileVersion": 3,
+                "packages": {"": root, "node_modules/newman": old_entry}}
+        next_lock = json.loads(json.dumps(lock))
+        next_lock["packages"][""]["devDependencies"]["newman"] = "6.2.3"
+        next_lock["packages"]["node_modules/newman"] = new_entry
+        signed = [{"name": "newman", "version": "6.2.3",
+                   "dependencyType": "direct:development",
+                   "updateType": "version-update:semver-patch"}]
+
+        valid = validate_npm_semantic_change(base, head, lock, next_lock, signed, CONFIG)
+        self.assertTrue(valid["eligible"], valid["reasons"])
+        self.assertEqual(len(valid["changes"]), 1)
+
+        # These immutable runtime and security controls cannot be rewritten by the bot.
+        tampered = json.loads(json.dumps(head))
+        tampered["overrides"]["handlebars"] = "4.7.9"
+        blocked = validate_npm_semantic_change(base, tampered, lock, next_lock, signed, CONFIG)
+        self.assertFalse(blocked["eligible"])
+        self.assertIn("security overrides changed", " ".join(blocked["reasons"]))
+
+        next_lock["packages"][""]["overrides"] = {"handlebars": "4.7.9"}
+        blocked = validate_npm_semantic_change(base, head, lock, next_lock, signed, CONFIG)
+        self.assertFalse(blocked["eligible"])
+        self.assertTrue(any("root overrides conflict" in r for r in blocked["reasons"]))
+
+        next_lock["packages"][""].pop("overrides")
+        next_lock["packages"]["node_modules/newman"]["hasInstallScript"] = True
+        blocked = validate_npm_semantic_change(base, head, lock, next_lock, signed, CONFIG)
+        self.assertFalse(blocked["eligible"])
+        self.assertTrue(any("install lifecycle script" in r for r in blocked["reasons"]))
+
+        next_lock["packages"]["node_modules/newman"].pop("hasInstallScript")
+        blocked = validate_npm_semantic_change(
+            base, head, lock, next_lock,
+            [{**signed[0], "version": "6.2.99"}], CONFIG,
+        )
+        self.assertFalse(blocked["eligible"])
+        self.assertTrue(any("signed resolved version" in r for r in blocked["reasons"]))
+
+        major = json.loads(json.dumps(head))
+        major["devDependencies"]["newman"] = "7.0.0"
+        major_lock = json.loads(json.dumps(next_lock))
+        major_lock["packages"][""]["devDependencies"]["newman"] = "7.0.0"
+        major_lock["packages"]["node_modules/newman"]["version"] = "7.0.0"
+        blocked = validate_npm_semantic_change(
+            base, major, lock, major_lock,
+            [{**signed[0], "version": "7.0.0", "updateType": "version-update:semver-major"}],
+            CONFIG,
+        )
+        self.assertFalse(blocked["eligible"])
 
     def test_zero_alert_security_files_remain_manual_control_plane(self) -> None:
         for path in (
@@ -684,7 +744,7 @@ class DependencyGovernanceTests(unittest.TestCase):
             ecosystem="npm",
             provenance={"eligible": True, "reasons": [], "commit": commit},
             metadata={"eligible": True, "reasons": [], "metadata": []},
-            semantic=validate_npm_manual(CONFIG),
+            semantic={"eligible": False, "reasons": ["unqualified dependency"], "changes": []},
             qualification={
                 "allSuccess": False,
                 "anyFailed": False,
