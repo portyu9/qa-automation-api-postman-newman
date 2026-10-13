@@ -201,12 +201,12 @@ def validate_config(config: dict[str, Any]) -> list[str]:
         errors.append("ecosystems must be configured")
         return unique(errors)
     npm = ecosystems.get("npm")
-    if not isinstance(npm, dict) or npm.get("mode") != "manual":
-        errors.append("npm ecosystem must be explicitly manual")
+    if not isinstance(npm, dict) or npm.get("mode") != "autonomous":
+        errors.append("npm ecosystem must use governed autonomous validation")
     elif not isinstance(npm.get("files"), list) or npm.get("files") != ["package.json", "package-lock.json"]:
         errors.append("npm files must be exactly ['package.json', 'package-lock.json']")
     elif not nonempty(npm.get("reason")):
-        errors.append("npm manual-review reason must be non-empty")
+        errors.append("npm autonomous validation reason must be non-empty")
 
     actions = ecosystems.get("github-actions")
     if not isinstance(actions, dict):
