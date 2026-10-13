@@ -70,7 +70,23 @@ function validateExceptionScope(exception, root, now) {
   if (!lock.packages || typeof lock.packages !== 'object') {
     throw new Error('package-lock.json is missing packages metadata');
   }
-  for (const [packageName, expected] of Object.entries(exception.exactVersions || {})) {
+  // A reviewed advisory exception can follow canonical signed patch updates
+  // of its direct parent without waiving the exact transitive risk boundary.
+  // This symbolic binding is restricted to Newman 6.x and does not relax the
+  // postman-runtime/node-forge version or source/asset restrictions below.
+  const manifestBoundNewman = (expected, name) => {
+    if (expected !== '$manifest-devDependency') return expected;
+    if (name !== 'newman' || exception.directDependency?.name !== 'newman') {
+      throw new Error(`exception ${exception.id}: invalid manifest-bound dependency`);
+    }
+    const actual = pkg.devDependencies?.newman;
+    if (typeof actual !== 'string' || !/^6\.[0-9]+\.[0-9]+$/.test(actual)) {
+      throw new Error(`exception ${exception.id}: manifest-bound newman must remain on reviewed 6.x major`);
+    }
+    return actual;
+  };
+  for (const [packageName, scopedVersion] of Object.entries(exception.exactVersions || {})) {
+    const expected = manifestBoundNewman(scopedVersion, packageName);
     const entry = lock.packages[`node_modules/${packageName}`];
     if (!entry || entry.version !== expected) {
       throw new Error(
@@ -79,12 +95,13 @@ function validateExceptionScope(exception, root, now) {
     }
   }
   if (exception.directDependency) {
+    const expected = manifestBoundNewman(exception.directDependency.version, exception.directDependency.name);
     const actual =
       pkg.devDependencies?.[exception.directDependency.name] ??
       pkg.dependencies?.[exception.directDependency.name];
-    if (actual !== exception.directDependency.version) {
+    if (actual !== expected) {
       throw new Error(
-        `exception ${exception.id}: expected direct ${exception.directDependency.name}@${exception.directDependency.version}, found ${actual ?? 'missing'}`
+        `exception ${exception.id}: expected direct ${exception.directDependency.name}@${expected}, found ${actual ?? 'missing'}`
       );
     }
   }

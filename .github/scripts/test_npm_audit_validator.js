@@ -431,4 +431,48 @@ function expectFailure(fn, pattern) {
   );
 }
 
+{
+  // The real policy's manifest-bound scope supports signed 6.x patch upgrades,
+  // but never relaxes exact postman-runtime / node-forge pins or ASAP guards.
+  const { root, config, audit } = nodeForgeFixture();
+  const exception = config.exceptions[0];
+  exception.exactVersions.newman = '$manifest-devDependency';
+  exception.directDependency.version = '$manifest-devDependency';
+  const packageFile = path.join(root, 'package.json');
+  const lockFile = path.join(root, 'package-lock.json');
+  const pack = JSON.parse(fs.readFileSync(packageFile, 'utf8'));
+  const lock = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
+  pack.devDependencies.newman = '6.2.3';
+  lock.packages['node_modules/newman'].version = '6.2.3';
+  fs.writeFileSync(packageFile, JSON.stringify(pack));
+  fs.writeFileSync(lockFile, JSON.stringify(lock));
+  const good = validateAuditPolicy({
+    audit, config, root, now: new Date('2026-10-13T12:00:00Z'), auditStatus: 1,
+  });
+  assert.equal(good.waivedRootAdvisories, 1);
+
+  lock.packages['node_modules/newman'].version = '6.2.2';
+  fs.writeFileSync(lockFile, JSON.stringify(lock));
+  expectFailure(() => validateAuditPolicy({
+    audit, config, root, now: new Date('2026-10-13T12:00:00Z'), auditStatus: 1,
+  }), /expected newman@6\.2\.3/);
+
+  lock.packages['node_modules/newman'].version = '7.0.0';
+  pack.devDependencies.newman = '7.0.0';
+  fs.writeFileSync(lockFile, JSON.stringify(lock));
+  fs.writeFileSync(packageFile, JSON.stringify(pack));
+  expectFailure(() => validateAuditPolicy({
+    audit, config, root, now: new Date('2026-10-13T12:00:00Z'), auditStatus: 1,
+  }), /reviewed 6\.x major/);
+
+  lock.packages['node_modules/newman'].version = '6.2.3';
+  pack.devDependencies.newman = '6.2.3';
+  lock.packages['node_modules/postman-runtime'].version = '7.39.2';
+  fs.writeFileSync(lockFile, JSON.stringify(lock));
+  fs.writeFileSync(packageFile, JSON.stringify(pack));
+  expectFailure(() => validateAuditPolicy({
+    audit, config, root, now: new Date('2026-10-13T12:00:00Z'), auditStatus: 1,
+  }), /expected postman-runtime@7\.39\.1/);
+}
+
 console.log('npm audit exception validator self-test: ok');
