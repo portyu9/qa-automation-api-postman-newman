@@ -201,12 +201,12 @@ def validate_config(config: dict[str, Any]) -> list[str]:
         errors.append("ecosystems must be configured")
         return unique(errors)
     npm = ecosystems.get("npm")
-    if not isinstance(npm, dict) or npm.get("mode") != "manual":
-        errors.append("npm ecosystem must be explicitly manual")
+    if not isinstance(npm, dict) or npm.get("mode") != "autonomous":
+        errors.append("npm ecosystem must use governed autonomous validation")
     elif not isinstance(npm.get("files"), list) or npm.get("files") != ["package.json", "package-lock.json"]:
         errors.append("npm files must be exactly ['package.json', 'package-lock.json']")
     elif not nonempty(npm.get("reason")):
-        errors.append("npm manual-review reason must be non-empty")
+        errors.append("npm autonomous validation reason must be non-empty")
 
     actions = ecosystems.get("github-actions")
     if not isinstance(actions, dict):
@@ -587,12 +587,104 @@ def validate_actions_semantic_change(
     return {"eligible": not reasons, "reasons": unique(reasons), "changes": changes}
 
 
-def validate_npm_manual(config: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "eligible": False,
-        "reasons": [config["ecosystems"]["npm"]["reason"]],
-        "changes": [],
-    }
+def validate_npm_semantic_change(
+    base_package: dict[str, Any],
+    head_package: dict[str, Any],
+    base_lock: dict[str, Any],
+    head_lock: dict[str, Any],
+    metadata: list[dict[str, str]],
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate Dependabot dependency versions against immutable package and lock authority."""
+    reasons: list[str] = []
+    changes: list[dict[str, str]] = []
+    sections = ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
+
+    def without_dependencies(value: dict[str, Any], *, root: bool = False) -> dict[str, Any]:
+        result = {k: v for k, v in value.items() if k not in sections}
+        if root:
+            overrides = result.pop("overrides", None)
+            if overrides is not None and overrides != base_package.get("overrides", {}):
+                reasons.append("package-lock root overrides conflict with immutable package.json")
+        return result
+
+    if without_dependencies(base_package) != without_dependencies(head_package):
+        reasons.append("package.json runtime, scripts, or security overrides changed")
+    if not all(base_lock.get(key) == head_lock.get(key) for key in ("name", "version", "lockfileVersion")):
+        reasons.append("package-lock identity or format changed")
+    before_packages = base_lock.get("packages")
+    after_packages = head_lock.get("packages")
+    if not isinstance(before_packages, dict) or not isinstance(after_packages, dict):
+        return {"eligible": False, "reasons": ["package-lock packages graph is missing"], "changes": []}
+    before_root = before_packages.get("")
+    after_root = after_packages.get("")
+    if not isinstance(before_root, dict) or not isinstance(after_root, dict):
+        return {"eligible": False, "reasons": ["package-lock root package record is missing"], "changes": []}
+    if without_dependencies(before_root, root=True) != without_dependencies(after_root, root=True):
+        reasons.append("package-lock root changed outside versioned dependency declarations")
+    for section in sections:
+        if after_root.get(section, {}) != head_package.get(section, {}):
+            reasons.append(f"package-lock root {section} differs from package.json")
+
+    old_specs: dict[str, tuple[str, str]] = {}
+    new_specs: dict[str, tuple[str, str]] = {}
+    for section in sections:
+        for dep, spec in base_package.get(section, {}).items():
+            if dep in old_specs:
+                reasons.append(f"duplicate direct dependency {dep}")
+            old_specs[dep] = (section, spec)
+        for dep, spec in head_package.get(section, {}).items():
+            if dep in new_specs:
+                reasons.append(f"duplicate direct dependency {dep}")
+            new_specs[dep] = (section, spec)
+    if set(old_specs) != set(new_specs):
+        reasons.append("direct dependency names were added or removed")
+    for dep in sorted(set(old_specs) & set(new_specs)):
+        old_section, old_spec = old_specs[dep]
+        section, new_spec = new_specs[dep]
+        if section != old_section:
+            reasons.append(f"{dep} changed its direct dependency section")
+        if old_spec == new_spec:
+            continue
+        risk = compare_versions(old_spec, new_spec)
+        if risk not in {"patch", "minor"}:
+            reasons.append(f"{dep} has non-autonomous version change {risk}")
+        changes.append({"dependency": dep, "from": old_spec, "to": new_spec, "risk": risk})
+
+    signed = {item.get("name", ""): item for item in metadata}
+    if len(signed) != len(metadata) or set(signed) != {item["dependency"] for item in changes}:
+        reasons.append("signed Dependabot metadata does not exactly match direct version changes")
+    for change in changes:
+        dep = change["dependency"]
+        signed_item = signed.get(dep, {})
+        expected_type = "direct:development" if new_specs[dep][0] == "devDependencies" else "direct:production"
+        if signed_item.get("dependencyType") != expected_type:
+            reasons.append(f"{dep} signed dependency type differs from manifest section")
+        if signed_item.get("updateType") not in config["allowedActionUpdateTypes"]:
+            reasons.append(f"{dep} signed update is not permitted minor/patch")
+        if str(signed_item.get("version", "")).removeprefix("v") != new_specs[dep][1].lstrip("^~v"):
+            reasons.append(f"{dep} signed resolved version differs from package.json")
+        locked = after_packages.get("node_modules/" + dep)
+        if not isinstance(locked, dict) or locked.get("version") != new_specs[dep][1].lstrip("^~v"):
+            reasons.append(f"{dep} lockfile direct package version does not match signed update")
+
+    for package_path, record in after_packages.items():
+        if package_path == "":
+            continue
+        previous = before_packages.get(package_path)
+        if not isinstance(record, dict):
+            reasons.append(f"package-lock package record is invalid for {package_path}")
+            continue
+        if record.get("hasInstallScript") is True and (not isinstance(previous, dict) or previous.get("hasInstallScript") is not True):
+            reasons.append(f"{package_path} adds an unreviewed install lifecycle script")
+        if isinstance(previous, dict) and previous.get("integrity") and not record.get("integrity"):
+            reasons.append(f"{package_path} removes dependency integrity metadata")
+        if record != previous and record.get("version") != (previous or {}).get("version"):
+            if not isinstance(record.get("integrity"), str) or not record["integrity"].startswith("sha512-"):
+                reasons.append(f"{package_path} lacks SHA-512 package integrity")
+    if not changes:
+        reasons.append("Dependabot PR changes no direct dependency version")
+    return {"eligible": not reasons, "reasons": unique(reasons), "changes": changes}
 
 
 def _workflow_subject_identity_matches(
@@ -843,8 +935,14 @@ def assess_pull(
     )
     ecosystem = classify_ecosystem(files, config)
 
-    if ecosystem == "npm":
-        semantic = validate_npm_manual(config)
+    if ecosystem == "npm" and provenance["eligible"] and metadata["eligible"]:
+        base_package = json.loads(api.file_at("package.json", base_sha))
+        head_package = json.loads(api.file_at("package.json", (pull.get("head") or {})["sha"]))
+        base_lock = json.loads(api.file_at("package-lock.json", base_sha))
+        head_lock = json.loads(api.file_at("package-lock.json", (pull.get("head") or {})["sha"]))
+        semantic = validate_npm_semantic_change(
+            base_package, head_package, base_lock, head_lock, metadata["metadata"], config
+        )
     elif ecosystem == "github-actions" and provenance["eligible"] and metadata["eligible"]:
         base_ref = base_sha
         head_ref = (pull.get("head") or {}).get("sha")

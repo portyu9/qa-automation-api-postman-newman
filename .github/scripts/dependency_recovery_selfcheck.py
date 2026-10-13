@@ -338,7 +338,7 @@ class RecoverySelfCheck(unittest.TestCase):
         self.assertFalse(result["rerunnable"])
         self.assertIn("recovery cap", result["reason"])
 
-    def test_scope_can_recover_manual_npm_without_changing_merge_policy(self) -> None:
+    def test_scope_can_recover_autonomous_npm_without_changing_merge_policy(self) -> None:
         base = {
             "pull": {"changed_files": 2},
             "files": [{"filename": "package.json"}, {"filename": "package-lock.json"}],
@@ -352,8 +352,8 @@ class RecoverySelfCheck(unittest.TestCase):
         result = recovery_scope_assessment(governance_config=GOVERNANCE, **base)
         self.assertTrue(result["eligible"])
         self.assertEqual(result["ecosystem"], "npm")
-        self.assertEqual(result["mergePolicy"], "manual")
-        self.assertEqual(GOVERNANCE["ecosystems"]["npm"]["mode"], "manual")
+        self.assertEqual(result["mergePolicy"], "governed-autonomous")
+        self.assertEqual(GOVERNANCE["ecosystems"]["npm"]["mode"], "autonomous")
 
         protected = recovery_scope_assessment(
             pull={"changed_files": 1},
@@ -381,7 +381,7 @@ class RecoverySelfCheck(unittest.TestCase):
         self.assertEqual(api.reruns, [run["id"]])
         assert isinstance(result, dict)
         self.assertEqual(result["actions"][0]["state"], "rerun-requested")
-        self.assertEqual(result["scope"]["mergePolicy"], "manual")
+        self.assertEqual(result["scope"]["mergePolicy"], "governed-autonomous")
 
     def test_stale_head_waits_for_native_dependabot_auto_rebase(self) -> None:
         fixture = canonical_fixture()
@@ -449,7 +449,7 @@ class RecoverySelfCheck(unittest.TestCase):
         self.assertNotIn("api.patch(", source)
         self.assertNotIn("api.put(", source)
         self.assertNotIn("update-branch", source)
-        self.assertEqual(GOVERNANCE["ecosystems"]["npm"]["mode"], "manual")
+        self.assertEqual(GOVERNANCE["ecosystems"]["npm"]["mode"], "autonomous")
 
 
 if __name__ == "__main__":

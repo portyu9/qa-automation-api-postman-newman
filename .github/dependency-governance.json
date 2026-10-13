@@ -69,8 +69,8 @@
         "package.json",
         "package-lock.json"
       ],
-      "mode": "manual",
-      "reason": "package.json combines the Newman direct dependency with Node/npm runtime contracts and explicit transitive security/compatibility overrides, while package-lock.json is the attributed resolved graph required by npm Audit and Trivy. npm dependency updates therefore remain human-reviewed instead of being represented as autonomously safe from manifest/lock scope alone."
+      "mode": "autonomous",
+      "reason": "Only canonical signed Dependabot dependency version changes with immutable package.json runtime and security overrides, coherent SHA-512 pinned lockfile graph, and passing exact-head CI/security qualification can be merged automatically."
     },
     "github-actions": {
       "workflowPrefix": ".github/workflows/",
