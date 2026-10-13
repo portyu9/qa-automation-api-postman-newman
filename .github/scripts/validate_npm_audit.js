@@ -80,7 +80,7 @@ function validateExceptionScope(exception, root, now) {
       throw new Error(`exception ${exception.id}: invalid manifest-bound dependency`);
     }
     const actual = pkg.devDependencies?.newman;
-    if (typeof actual !== 'string' || !/^6\\.[0-9]+\\.[0-9]+$/.test(actual)) {
+    if (typeof actual !== 'string' || !/^6\.[0-9]+\.[0-9]+$/.test(actual)) {
       throw new Error(`exception ${exception.id}: manifest-bound newman must remain on reviewed 6.x major`);
     }
     return actual;
