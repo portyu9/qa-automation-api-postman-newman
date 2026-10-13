@@ -455,7 +455,7 @@ function expectFailure(fn, pattern) {
   fs.writeFileSync(lockFile, JSON.stringify(lock));
   expectFailure(() => validateAuditPolicy({
     audit, config, root, now: new Date('2026-10-13T12:00:00Z'), auditStatus: 1,
-  }), /expected newman@6\\.2\\.3/);
+  }), /expected newman@6\.2\.3/);
 
   lock.packages['node_modules/newman'].version = '7.0.0';
   pack.devDependencies.newman = '7.0.0';
@@ -463,7 +463,7 @@ function expectFailure(fn, pattern) {
   fs.writeFileSync(packageFile, JSON.stringify(pack));
   expectFailure(() => validateAuditPolicy({
     audit, config, root, now: new Date('2026-10-13T12:00:00Z'), auditStatus: 1,
-  }), /reviewed 6\\.x major/);
+  }), /reviewed 6\.x major/);
 
   lock.packages['node_modules/newman'].version = '6.2.3';
   pack.devDependencies.newman = '6.2.3';
@@ -472,7 +472,7 @@ function expectFailure(fn, pattern) {
   fs.writeFileSync(packageFile, JSON.stringify(pack));
   expectFailure(() => validateAuditPolicy({
     audit, config, root, now: new Date('2026-10-13T12:00:00Z'), auditStatus: 1,
-  }), /expected postman-runtime@7\\.39\\.1/);
+  }), /expected postman-runtime@7\.39\.1/);
 }
 
 console.log('npm audit exception validator self-test: ok');
