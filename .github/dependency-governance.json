@@ -61,7 +61,11 @@
     ".github/dependabot.yml",
     ".github/security/npm-audit-exceptions.json",
     ".github/scripts/validate_npm_audit.js",
-    ".github/scripts/test_npm_audit_validator.js"
+    ".github/scripts/test_npm_audit_validator.js",
+    ".github/scripts/validate_asap_disabled.js",
+    ".github/scripts/validate_asap_disabled.selftest.js",
+    "vendor/node-forge-disabled/package.json",
+    "vendor/node-forge-disabled/index.js"
   ],
   "ecosystems": {
     "npm": {

@@ -1,39 +1,4 @@
 {
   "schemaVersion": 1,
-  "exceptions": [
-    {
-      "id": "GHSA-86w9-cpqp-85rv",
-      "package": "node-forge",
-      "severity": "high",
-      "expiresOn": "2026-10-18",
-      "rationale": "node-forge 1.4.0 has no patched npm version for GHSA-86w9-cpqp-85rv. The exception permits only manifest-matched Newman 6.x patch/minor updates, while strictly retaining postman-runtime 7.39.1, node-forge 1.4.0, upstream ASAP source markers, forbidden execution-asset patterns, and its October 18 expiration. Exact-head Dependabot provenance, CI, package integrity, and security qualification still apply; any transitive drift or new advisory fails closed.",
-      "exactVersions": {
-        "newman": "$manifest-devDependency",
-        "postman-runtime": "7.39.1",
-        "node-forge": "1.4.0"
-      },
-      "directDependency": {
-        "name": "newman",
-        "version": "$manifest-devDependency"
-      },
-      "installedSource": {
-        "path": "node_modules/postman-runtime/lib/authorizer/asap.js",
-        "requiredMarkers": [
-          "nodeForge = require('node-forge')",
-          "nodeForge.asn1.fromDer",
-          "nodeForge.pki.privateKeyFromAsn1",
-          "nodeForge.pki.privateKeyToPem",
-          "new jose.SignJWT"
-        ],
-        "forbiddenPatterns": [
-          ".verify(",
-          "publicKeyFrom",
-          "certificateFrom"
-        ]
-      },
-      "forbiddenAssetPatterns": [
-        "asap"
-      ]
-    }
-  ]
+  "exceptions": []
 }

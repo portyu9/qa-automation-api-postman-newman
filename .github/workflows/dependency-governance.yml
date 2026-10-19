@@ -17,6 +17,8 @@ on:
       - '.github/scripts/validate_security_stack.py'
       - '.github/scripts/validate_npm_audit.js'
       - '.github/scripts/test_npm_audit_validator.js'
+      - '.github/scripts/validate_asap_disabled.js'
+      - '.github/scripts/validate_asap_disabled.selftest.js'
       - '.github/security/npm-audit-exceptions.json'
       - '.github/workflows/security.yml'
       - '.github/workflows/dependency-governance.yml'
