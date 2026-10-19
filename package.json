@@ -14,14 +14,15 @@
   },
   "license": "MIT",
   "devDependencies": {
-    "newman": "6.2.3"
+    "newman": "6.2.3",
+    "node-forge": "file:vendor/node-forge-disabled"
   },
   "overrides": {
     "@faker-js/faker": "10.5.0",
     "flatted": "3.4.4",
     "handlebars": "4.7.10",
     "lodash": "4.18.1",
-    "node-forge": "1.4.0",
+    "node-forge": "$node-forge",
     "underscore": "1.13.8"
   },
   "packageManager": "npm@11.19.1"

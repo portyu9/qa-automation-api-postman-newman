@@ -56,6 +56,10 @@ jobs:
           test "$(node --version)" = "v${{ matrix.node }}"
       - name: Install locked dependencies without lifecycle scripts
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Assert vulnerable node-forge was removed (no ASAP crypto)
+        run: |
+          node .github/scripts/validate_asap_disabled.js
+          node .github/scripts/validate_asap_disabled.selftest.js
       - name: Validate assets, runtime, fixture, and evidence policy
         run: npm run validate
       - name: Execute collection against runner-owned local API

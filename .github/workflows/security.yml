@@ -86,6 +86,10 @@ jobs:
           test "$(node --version)" = "v${NODE_VERSION}"
       - name: Install locked dependency graph without lifecycle scripts
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Assert vulnerable node-forge was removed (no ASAP crypto)
+        run: |
+          node .github/scripts/validate_asap_disabled.js
+          node .github/scripts/validate_asap_disabled.selftest.js
       - name: Test governed npm advisory policy
         run: node .github/scripts/test_npm_audit_validator.js
       - name: Audit HIGH and CRITICAL npm advisories with governed exceptions
@@ -119,6 +123,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Validate immutable workflow dependencies
         run: python3 .github/scripts/validate_workflow_pins.py
+      - name: Verify inert node-forge lock replacement before vulnerability scan
+        run: node .github/scripts/validate_asap_disabled.js --lock-only
       - name: Prepare evidence directory
         run: mkdir -p reports/security
       - name: Scan npm dev dependencies, configuration, and repository secrets
@@ -151,7 +157,7 @@ jobs:
           [[ "$npm_results" -ge 1 ]] || { echo 'Trivy JSON does not attribute an npm package-lock result' >&2; exit 1; }
           package_count=$(jq '[.Results[]? | select(.Class == "lang-pkgs" and .Type == "npm" and (.Target | endswith("package-lock.json"))) | .Packages[]?] | length' "$report")
           [[ "$package_count" -ge 10 ]] || { echo "Trivy npm package graph is unexpectedly small: $package_count" >&2; exit 1; }
-          for package_name in newman flatted handlebars lodash node-forge underscore; do
+          for package_name in newman flatted handlebars lodash underscore; do
             jq -e --arg package_name "$package_name" '
               [.Results[]?
                 | select(.Class == "lang-pkgs" and .Type == "npm" and (.Target | endswith("package-lock.json")))
@@ -178,7 +184,7 @@ jobs:
             echo
             echo '- Scanner: Trivy v0.74.0'
             echo '- npm dev dependencies are explicitly included through the committed Trivy configuration.'
-            echo '- The package-lock evidence must include Newman plus the governed transitive override packages.'
+            echo '- The package-lock evidence must include Newman and governed transitive override packages; the node-forge registry package is replaced by a fail-closed local stub verified separately.'
             echo '- Missing or unattributed JSON evidence is itself a gate failure.'
           } | tee "$summary" >> "$GITHUB_STEP_SUMMARY"
       - name: Upload repository security evidence

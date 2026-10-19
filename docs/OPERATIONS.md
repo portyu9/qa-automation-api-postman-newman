@@ -238,3 +238,10 @@ Dependabot, lifecycle-script-disabled locked installation, deterministic fixture
 - [`../CONTRIBUTING.md`](../CONTRIBUTING.md) — change-quality expectations.
 
 A strong Newman framework makes the failing boundary obvious: asset/format compatibility, variable scope, runtime validation, target authorization, target preflight, local fixture/state, collection assertion, request-evidence lifecycle, or explicit deployed environment.
+
+
+### CVE-2026-85393: unsupported ASAP crypto is disabled
+
+`postman-runtime@7.39.1` requires `node-forge` solely in the ASAP signer (`lib/authorizer/asap.js`). The framework's governed collections do **not** support ASAP authentication; they forbid ASAP-bearing execution assets. Because upstream `node-forge@1.4.0` has an unpatched RSA signature-verification flaw (GHSA-86w9-cpqp-85rv), this repository deliberately **removes that upstream code** from the dependency graph. It replaces the module with a minimal local `vendor/node-forge-disabled` module, whose signing/conversion functions throw `ERR_ASAP_AUTH_DISABLED`. This is **not** a patched upstream node-forge and must never be used as a generic cryptography library.
+
+`package.json` binds a direct local dependency and all transitive `node-forge` resolutions to the same reviewed module. `.github/scripts/validate_asap_disabled.js` verifies the root manifest, lockfile, nested graph, local realpath, and fail-closed API. Both Node runtime CI lanes, npm audit, and Trivy guard the replacement. The npm advisory policy contains no active exception; HIGH/CRITICAL registry advisories remain blocking. Any new ASAP requirement must be reviewed and implemented using an actually maintained cryptographic library, not by re-enabling `node-forge`.
