@@ -1,5 +1,5 @@
 {
-  "name": "node-forge",
+  "name": "@portyu9/asap-disabled",
   "version": "0.0.0-asap-disabled",
   "private": true,
   "description": "Inert, auditable replacement for unsupported Postman ASAP signing path. No cryptography or signature verification.",

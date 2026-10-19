@@ -22,6 +22,7 @@ rejects((p) => { p.devDependencies['node-forge'] = '1.4.0'; }, /local inert/);
 rejects((_p, l) => { l.packages['node_modules/node-forge'] = { version: '1.4.0', resolved: 'https://registry.npmjs.org/node-forge/-/node-forge-1.4.0.tgz' }; }, /registry node-forge/);
 rejects((_p, l) => { l.packages['node_modules/postman-runtime/node_modules/node-forge'] = { version: '1.4.0' }; }, /nested upstream/);
 rejects((_p, l) => { l.packages['vendor/node-forge-disabled'].version = '1.4.0'; }, /inert reviewed/);
+rejects((_p, _l, v) => { v.name = 'node-forge'; }, /@portyu9\\/asap-disabled/);
 rejects((_p, _l, v) => { v.scripts = { postinstall: 'node download.js' }; }, /lifecycle scripts/);
 rejects((_p, _l, v) => { v.dependencies = { 'node-forge': '1.4.0' }; }, /transitive packages/);
 if (fs.existsSync(path.join(root, 'node_modules/node-forge'))) verifyInstalled(root);

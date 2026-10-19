@@ -15,8 +15,8 @@ function validateManifestAndLock(manifest, lock, vendorManifest) {
   assert.equal(lock.lockfileVersion, 3, 'immutable npm v3 lockfile required');
   assert.equal(lock.packages?.['']?.devDependencies?.['node-forge'], LOCAL_SPEC, 'lock root must bind the local replacement');
   assert.deepEqual(lock.packages?.['node_modules/node-forge'], { resolved: LOCAL_PATH, link: true }, 'registry node-forge must never be installed');
-  assert.deepEqual(lock.packages?.[LOCAL_PATH], { name: 'node-forge', version: INERT_VERSION, dev: true }, 'the only allowed replacement is the inert reviewed package');
-  assert.equal(vendorManifest.name, 'node-forge');
+  assert.deepEqual(lock.packages?.[LOCAL_PATH], { name: '@portyu9/asap-disabled', version: INERT_VERSION, dev: true }, 'the only allowed replacement is the inert reviewed package');
+  assert.equal(vendorManifest.name, '@portyu9/asap-disabled');
   assert.equal(vendorManifest.version, INERT_VERSION);
   assert.equal(vendorManifest.private, true);
   assert.equal(vendorManifest.main, 'index.js');
