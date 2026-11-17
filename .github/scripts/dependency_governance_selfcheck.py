@@ -4,7 +4,7 @@ import io
 import json
 import unittest
 import urllib.error
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -155,6 +155,8 @@ class DependencyGovernanceTests(unittest.TestCase):
         self.assertTrue(validate_config({**CONFIG, "manualReviewPaths": []}))
         self.assertTrue(validate_config({**CONFIG, "ownerApprovalRequired": False}))
         self.assertTrue(validate_config({**CONFIG, "ownerApprovalUserId": 0}))
+        for invalid in (None, False, 0, 29, "30", 1441, 30.5):
+            self.assertTrue(validate_config({**CONFIG, "nativeRefreshEscalationMinutes": invalid}))
         self.assertTrue(
             validate_config({**CONFIG, "trustedWorkflowDispatchActorLogin": "someone"})
         )
@@ -212,6 +214,63 @@ class DependencyGovernanceTests(unittest.TestCase):
         self.assertIn(head, refresh_owner.comments[0]["body"])
         self.assertTrue(request_dependabot_refresh(refresh_owner, stale, CONFIG))
         self.assertEqual(len(refresh_owner.comments), 1)
+
+    def test_expired_signed_bot_rebase_recreates_exactly_once(self) -> None:
+        _, head, pull, commit = canonical_fixture()
+        now = datetime(2026, 11, 17, tzinfo=timezone.utc)
+        stale = Assessment(
+            pull=pull, base_sha="c" * 40,
+            files=[{"filename": ".github/workflows/security.yml"}],
+            ecosystem="github-actions",
+            provenance={
+                "eligible": False,
+                "reasons": ["PR is not rebased directly on the current base branch head"],
+                "commit": commit,
+            },
+            metadata={"eligible": True, "reasons": [], "metadata": []},
+            semantic={"eligible": False, "reasons": [], "changes": []},
+            qualification=None,
+        )
+        owner = OwnerApi()
+        self.assertTrue(request_dependabot_refresh(owner, stale, CONFIG, observed_at=now))
+        self.assertEqual(len(owner.comments), 1)
+        self.assertTrue(owner.comments[0]["body"].startswith("@dependabot rebase\n"))
+        owner.comments[0]["created_at"] = now.isoformat()
+        lease = timedelta(minutes=CONFIG["nativeRefreshEscalationMinutes"])
+        request_dependabot_refresh(
+            owner, stale, CONFIG, observed_at=now + lease - timedelta(microseconds=1)
+        )
+        self.assertEqual(len(owner.comments), 1)
+        request_dependabot_refresh(owner, stale, CONFIG, observed_at=now + lease)
+        self.assertEqual(len(owner.comments), 2)
+        self.assertTrue(owner.comments[1]["body"].startswith("@dependabot recreate\n"))
+        self.assertIn(head, owner.comments[1]["body"])
+        self.assertIn(stale.base_sha, owner.comments[1]["body"])
+        request_dependabot_refresh(owner, stale, CONFIG, observed_at=now + timedelta(days=1))
+        self.assertEqual(len(owner.comments), 2, "recreate idempotent per exact signed source")
+        for invalid_stamp in ("invalid", "2100-01-01T00:00:00Z"):
+            limited = OwnerApi()
+            request_dependabot_refresh(limited, stale, CONFIG, observed_at=now)
+            limited.comments[0]["created_at"] = invalid_stamp
+            request_dependabot_refresh(limited, stale, CONFIG, observed_at=now + lease)
+            self.assertEqual(len(limited.comments), 1)
+        spoofed = OwnerApi()
+        spoofed.comments.append({
+            "body": owner.comments[0]["body"],
+            "created_at": now.isoformat(),
+            "user": {"login": "attacker", "id": 3},
+        })
+        request_dependabot_refresh(spoofed, stale, CONFIG, observed_at=now + lease)
+        self.assertEqual(len(spoofed.comments), 2)
+        self.assertTrue(spoofed.comments[-1]["body"].startswith("@dependabot rebase\n"))
+        stale.pull["head"]["sha"] = "d" * 40
+        request_dependabot_refresh(owner, stale, CONFIG, observed_at=now + lease)
+        self.assertEqual(len(owner.comments), 3)
+        self.assertTrue(owner.comments[-1]["body"].startswith("@dependabot rebase\n"))
+        with self.assertRaises(GovernanceError):
+            request_dependabot_refresh(owner, stale, CONFIG, observed_at=datetime(2026, 11, 17))
+        stale.provenance["reasons"].append("unverified bot commit")
+        self.assertFalse(request_dependabot_refresh(owner, stale, CONFIG, observed_at=now))
 
     def test_action_required_runs_dispatch_trusted_exact_head_workflows(self) -> None:
         base, head, pull, commit = canonical_fixture()
