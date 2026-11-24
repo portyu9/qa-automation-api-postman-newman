@@ -1137,6 +1137,16 @@ def verify_owner_identity(owner_api: GitHubApi | None, config: dict[str, Any]) -
         )
 
 
+def verify_scheduled_owner_readiness(
+    event_name: str, owner_api: GitHubApi | None, config: dict[str, Any]
+) -> dict[str, Any]:
+    """An empty scheduled Dependabot queue does not excuse missing owner authority."""
+    if event_name != "schedule":
+        return {"checked": False}
+    verify_owner_identity(owner_api, config)
+    return {"checked": True, "identity": "verified"}
+
+
 def has_exact_owner_approval(
     owner_api: GitHubApi, number: int, head_sha: str, config: dict[str, Any]
 ) -> bool:
@@ -1770,6 +1780,7 @@ def main(argv: list[str] | None = None) -> int:
     allow_merge = os.environ.get("ALLOW_MERGE") == "true"
 
     if event_name in {"schedule", "push"}:
+        owner_readiness = verify_scheduled_owner_readiness(event_name, owner_api, config)
         pulls = api.paginate("/pulls?state=open")
         dependabot_pulls = [
             pull
@@ -1783,7 +1794,7 @@ def main(argv: list[str] | None = None) -> int:
                 api, owner_api, pull["number"], config, allow_merge
             ),
         )
-        print(json.dumps({"reconciled": len(results), "failed": failures}, indent=2))
+        print(json.dumps({"reconciled": len(results), "failed": failures, "ownerReadiness": owner_readiness}, indent=2))
         if failures:
             raise GovernanceError(
                 f"scheduled dependency governance failed for {len(failures)} PR(s)"
