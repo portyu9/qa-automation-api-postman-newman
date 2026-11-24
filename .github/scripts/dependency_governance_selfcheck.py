@@ -32,6 +32,7 @@ from dependency_governance import (
     validate_npm_semantic_change,
     validate_provenance,
     validate_signed_metadata,
+    verify_scheduled_owner_readiness,
     workflow_identity_matches,
 )
 
@@ -142,6 +143,34 @@ class OwnerApi:
 
 
 class DependencyGovernanceTests(unittest.TestCase):
+    def test_schedule_idle_sweep_authenticates_exact_configured_owner(self) -> None:
+        owner = OwnerApi(CONFIG["ownerApprovalLogin"], CONFIG["ownerApprovalUserId"])
+        self.assertEqual(
+            verify_scheduled_owner_readiness("schedule", owner, CONFIG),
+            {"checked": True, "identity": "verified"},
+        )
+        with self.assertRaisesRegex(GovernanceError, "DEPENDABOT_OWNER_TOKEN is required"):
+            verify_scheduled_owner_readiness("schedule", None, CONFIG)
+        wrong = OwnerApi(CONFIG["ownerApprovalLogin"], CONFIG["ownerApprovalUserId"] + 1)
+        with self.assertRaisesRegex(GovernanceError, "configured repository owner identity"):
+            verify_scheduled_owner_readiness("schedule", wrong, CONFIG)
+        with (
+            patch.object(owner, "get", side_effect=GovernanceError("expired owner token")),
+            self.assertRaisesRegex(GovernanceError, "expired owner token"),
+        ):
+            verify_scheduled_owner_readiness("schedule", owner, CONFIG)
+
+    def test_push_and_other_events_do_not_acquire_extra_owner_authority(self) -> None:
+        class Unexpected:
+            def get(self, path: str) -> dict:
+                raise AssertionError(f"unexpected owner token request: {path}")
+
+        for event in ("push", "workflow_dispatch", "workflow_run", "pull_request_target"):
+            self.assertEqual(
+                verify_scheduled_owner_readiness(event, Unexpected(), CONFIG),
+                {"checked": False},
+            )
+
     def test_config_is_fail_closed(self) -> None:
         self.assertEqual(validate_config(CONFIG), [])
         major = {
